@@ -17,8 +17,8 @@ function App() {
     setMessage('');
     setLoading(true);
     const url = isLogin
-      ? 'http://127.0.0.1:5000/login'
-      : 'http://127.0.0.1:5000/signup';
+      ? 'https://s-nalantamil-chat.onrender.com/login'
+      : 'https://s-nalantamil-chat.onrender.com/signup';
     try {
       const response = await axios.post(url, { username, password });
       setIsError(false);
