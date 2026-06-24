@@ -17,8 +17,8 @@ function App() {
     setMessage('');
     setLoading(true);
     const url = isLogin
-      ? `${process.env.REACT_APP_BACKEND_URL || 'http://127.0.0.1:5000'}/login`
-      : `${process.env.REACT_APP_BACKEND_URL || 'http://127.0.0.1:5000'}/signup`;
+        ? 'http://127.0.0.1:5000/login'
+        : 'http://127.0.0.1:5000/signup';
     try {
       const response = await axios.post(url, { username, password });
       setIsError(false);

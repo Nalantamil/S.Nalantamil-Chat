@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { io } from 'socket.io-client';
 import axios from 'axios';
 
-const socket = io(process.env.REACT_APP_BACKEND_URL || 'http://127.0.0.1:5000');
+const socket = io('http://127.0.0.1:5000');
 
 function Chat({ username, onLogout }) {
   const [messages, setMessages] = useState([]);
@@ -16,7 +16,7 @@ function Chat({ username, onLogout }) {
   const REACTIONS = ['👍', '❤️', '😂', '😮', '😢'];
 
   useEffect(() => {
-      axios.get(`${process.env.REACT_APP_BACKEND_URL || 'http://127.0.0.1:5000'}/messages`).then((res) => {
+      axios.get('http://127.0.0.1:5000/messages').then((res) => {
       setMessages(res.data);
     });
 
