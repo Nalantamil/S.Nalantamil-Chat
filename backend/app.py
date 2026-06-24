@@ -12,7 +12,8 @@ CORS(app, resources={r"/*": {"origins": "*"}})
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
 
 # Connect to MongoDB
-client = MongoClient("mongodb://localhost:27017/")
+import os
+client = MongoClient(os.environ.get("MONGODB_URI", "mongodb+srv://tamilsundhar:Nalan1234@cluster0.pse786b.mongodb.net/chatapp"))
 db = client["chatapp"]
 users_collection = db["users"]
 messages_collection = db["messages"]
