@@ -8,8 +8,8 @@ import datetime
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'your-secret-key-change-later'
-CORS(app)
-socketio = SocketIO(app, cors_allowed_origins="*")
+CORS(app, resources={r"/*": {"origins": "*"}})
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode='gevent')
 
 # Connect to MongoDB
 client = MongoClient("mongodb://localhost:27017/")
