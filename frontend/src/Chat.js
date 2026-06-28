@@ -483,6 +483,64 @@ const formatTime = (timestamp) => {
         }
 
         .send-btn:hover { transform: scale(1.08); box-shadow: 0 4px 15px rgba(102,126,234,0.5); }
+
+        /* ===== MOBILE RESPONSIVE ===== */
+@media (max-width: 768px) {
+  .chat-layout {
+    flex-direction: column;
+  }
+
+  .sidebar {
+    width: 100%;
+    min-width: 100%;
+    height: auto;
+    border-right: none;
+    border-bottom: 1px solid rgba(255,255,255,0.07);
+    flex-direction: row;
+    align-items: center;
+    padding: 10px 16px;
+    gap: 12px;
+  }
+
+  .sidebar-logo { 
+    padding: 0; 
+    border-bottom: none; 
+  }
+
+  .sidebar-section-title { display: none; }
+  .room-item { display: none; }
+  .sidebar-spacer { display: none; }
+
+  .sidebar-user {
+    border-top: none;
+    padding: 0;
+    flex: 1;
+    justify-content: flex-end;
+  }
+
+  .chat-main {
+    flex: 1;
+    height: calc(100vh - 70px);
+  }
+
+  .chat-header {
+    padding: 12px 16px;
+  }
+
+  .messages-area {
+    padding: 16px;
+  }
+
+  .msg-row {
+    max-width: 90%;
+  }
+
+  .input-area {
+    padding: 12px 16px 16px;
+  }
+
+  .msg-count { display: none; }
+}
       `}</style>
 
       <div className="chat-layout">
