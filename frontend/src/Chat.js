@@ -16,7 +16,7 @@ function Chat({ username, onLogout }) {
   const REACTIONS = ['👍', '❤️', '😂', '😮', '😢'];
 
   useEffect(() => {
-      axios.get('https://s-nalantamil-chat.onrender.com/messages').then((res) => {
+    axios.get('https://s-nalantamil-chat.onrender.com/messages').then((res) => {
       setMessages(res.data);
     });
 
@@ -67,7 +67,7 @@ function Chat({ username, onLogout }) {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, typingUsers]);
 
-const handleInputChange = (e) => {
+  const handleInputChange = (e) => {
     setInput(e.target.value);
     if (e.target.value.trim()) {
       socket.emit('typing', { username });
@@ -109,15 +109,16 @@ const handleInputChange = (e) => {
     socket.emit('add_reaction', { message_id, emoji, username });
   };
 
-const formatTime = (timestamp) => {
+  const formatTime = (timestamp) => {
     if (!timestamp) return '';
     const date = new Date(timestamp + 'Z');
-    return date.toLocaleTimeString('en-IN', { 
-      hour: '2-digit', 
+    return date.toLocaleTimeString('en-IN', {
+      hour: '2-digit',
       minute: '2-digit',
-      hour12: true 
+      hour12: true
     });
   };
+
   const getInitial = (name) => name ? name[0].toUpperCase() : '?';
 
   return (
@@ -362,9 +363,7 @@ const formatTime = (timestamp) => {
         .action-btn:hover { background: rgba(255,255,255,0.2); color: white; }
         .action-btn.delete:hover { background: rgba(231,76,60,0.3); border-color: rgba(231,76,60,0.5); color: #e74c3c; }
 
-        .reactions-bar {
-          display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px;
-        }
+        .reactions-bar { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
 
         .reaction-btn {
           background: rgba(255,255,255,0.08);
@@ -377,7 +376,6 @@ const formatTime = (timestamp) => {
 
         .reaction-btn:hover { background: rgba(255,255,255,0.18); transform: scale(1.1); }
         .reaction-btn.reacted { background: rgba(102,126,234,0.25); border-color: rgba(102,126,234,0.5); }
-
         .reaction-count { font-size: 11px; color: rgba(255,255,255,0.7); }
 
         .reaction-picker {
@@ -389,8 +387,7 @@ const formatTime = (timestamp) => {
 
         .reaction-pick-btn {
           background: none; border: none; font-size: 18px;
-          cursor: pointer; transition: transform 0.2s;
-          padding: 2px;
+          cursor: pointer; transition: transform 0.2s; padding: 2px;
         }
 
         .reaction-pick-btn:hover { transform: scale(1.3); }
@@ -424,13 +421,11 @@ const formatTime = (timestamp) => {
         }
 
         .typing-text { font-size: 12px; color: rgba(255,255,255,0.4); font-style: italic; }
-
         .typing-dots { display: flex; gap: 3px; align-items: center; }
 
         .typing-dot {
           width: 6px; height: 6px; background: rgba(255,255,255,0.4);
-          border-radius: 50%;
-          animation: typingBounce 1s ease infinite;
+          border-radius: 50%; animation: typingBounce 1s ease infinite;
         }
 
         .typing-dot:nth-child(2) { animation-delay: 0.2s; }
@@ -483,119 +478,31 @@ const formatTime = (timestamp) => {
         }
 
         .send-btn:hover { transform: scale(1.08); box-shadow: 0 4px 15px rgba(102,126,234,0.5); }
-        /* ===== MOBILE RESPONSIVE ===== */
-@media (max-width: 768px) {
-  .chat-layout {
-    flex-direction: column;
-  }
 
-  .sidebar {
-    width: 100%;
-    min-width: 100%;
-    height: auto;
-    border-right: none;
-    border-bottom: 1px solid rgba(255,255,255,0.07);
-    flex-direction: row;
-    align-items: center;
-    padding: 10px 16px;
-    gap: 12px;
-  }
-
-  .sidebar-logo { 
-    padding: 0; 
-    border-bottom: none; 
-  }
-
-  .sidebar-section-title { display: none; }
-  .room-item { display: none; }
-  .sidebar-spacer { display: none; }
-
-  .sidebar-user {
-    border-top: none;
-    padding: 0;
-    flex: 1;
-    justify-content: flex-end;
-  }
-
-  .chat-main {
-    flex: 1;
-    height: calc(100vh - 70px);
-  }
-
-  .chat-header {
-    padding: 12px 16px;
-  }
-
-  .messages-area {
-    padding: 16px;
-  }
-
-  .msg-row {
-    max-width: 90%;
-  }
-
-  .input-area {
-    padding: 12px 16px 16px;
-  }
-
-  .msg-count { display: none; }
-}
-
-  .sidebar {
-    width: 100%;
-    min-width: 100%;
-    height: auto;
-    border-right: none;
-    border-bottom: 1px solid rgba(255,255,255,0.07);
-    flex-direction: row;
-    align-items: center;
-    padding: 10px 16px;
-    gap: 12px;
-  }
-
-  .sidebar-logo { 
-    padding: 0; 
-    border-bottom: none; 
-  }
-
-  .sidebar-section-title { display: none; }
-  .room-item { display: none; }
-  .sidebar-spacer { display: none; }
-
-  .sidebar-user {
-    border-top: none;
-    padding: 0;
-    flex: 1;
-    justify-content: flex-end;
-  }
-
-  .chat-main {
-    flex: 1;
-    height: calc(100vh - 70px);
-  }
-
-  .chat-header {
-    padding: 12px 16px;
-  }
-
-  .messages-area {
-    padding: 16px;
-  }
-
-  .msg-row {
-    max-width: 90%;
-  }
-
-  .input-area {
-    padding: 12px 16px 16px;
-  }
-
-  .msg-count { display: none; }
-}
+        @media (max-width: 768px) {
+          .chat-layout { flex-direction: column; }
+          .sidebar {
+            width: 100%; min-width: 100%; height: auto;
+            border-right: none;
+            border-bottom: 1px solid rgba(255,255,255,0.07);
+            flex-direction: row; align-items: center;
+            padding: 10px 16px; gap: 12px;
+          }
+          .sidebar-logo { padding: 0; border-bottom: none; }
+          .sidebar-section-title { display: none; }
+          .room-item { display: none; }
+          .sidebar-spacer { display: none; }
+          .sidebar-user { border-top: none; padding: 0; flex: 1; justify-content: flex-end; }
+          .chat-main { flex: 1; height: calc(100vh - 70px); }
+          .chat-header { padding: 12px 16px; }
+          .messages-area { padding: 16px; }
+          .msg-row { max-width: 90%; }
+          .input-area { padding: 12px 16px 16px; }
+          .msg-count { display: none; }
+        }
       `}</style>
 
       <div className="chat-layout">
-        {/* SIDEBAR */}
         <div className="sidebar">
           <div className="sidebar-logo">
             <div className="logo-row">
@@ -623,7 +530,6 @@ const formatTime = (timestamp) => {
           </div>
         </div>
 
-        {/* MAIN CHAT */}
         <div className="chat-main">
           <div className="chat-header">
             <div className="chat-header-avatar">🌐</div>
@@ -652,13 +558,11 @@ const formatTime = (timestamp) => {
                 const isMine = msg.username === username;
                 const isEditing = editingId === msg._id;
                 const reactions = msg.reactions || {};
-
                 return (
                   <div key={msg._id || index} className={`msg-row ${isMine ? 'mine' : 'theirs'}`}>
                     <div className="msg-avatar">{getInitial(msg.username)}</div>
                     <div className="msg-content">
                       {!isMine && <span className="msg-sender">{msg.username}</span>}
-
                       {isEditing ? (
                         <>
                           <input
@@ -676,13 +580,10 @@ const formatTime = (timestamp) => {
                       ) : (
                         <>
                           <div className="msg-bubble">{msg.text}</div>
-
                           <div className="msg-footer">
                             <span className="msg-time">{formatTime(msg.timestamp)}</span>
                             {msg.edited && <span className="edited-tag">(edited)</span>}
                           </div>
-
-                          {/* Reactions display */}
                           {Object.keys(reactions).length > 0 && (
                             <div className="reactions-bar">
                               {Object.entries(reactions).map(([emoji, users]) =>
@@ -698,8 +599,6 @@ const formatTime = (timestamp) => {
                               )}
                             </div>
                           )}
-
-                          {/* Reaction picker + edit/delete */}
                           <div className="msg-actions">
                             <div className="reaction-picker">
                               {REACTIONS.map((emoji) => (
@@ -726,21 +625,18 @@ const formatTime = (timestamp) => {
                 );
               })
             )}
-
-          {/* Typing indicator */}
-          {typingUsers.filter(u => u !== username).length > 0 && (
-            <div className="typing-indicator">
-              <div className="typing-dots">
-                <div className="typing-dot"></div>
-                <div className="typing-dot"></div>
-                <div className="typing-dot"></div>
+            {typingUsers.filter(u => u !== username).length > 0 && (
+              <div className="typing-indicator">
+                <div className="typing-dots">
+                  <div className="typing-dot"></div>
+                  <div className="typing-dot"></div>
+                  <div className="typing-dot"></div>
+                </div>
+                <span className="typing-text">
+                  {typingUsers.filter(u => u !== username).join(', ')} {typingUsers.filter(u => u !== username).length === 1 ? 'is' : 'are'} typing...
+                </span>
               </div>
-              <span className="typing-text">
-                {typingUsers.filter(u => u !== username).join(', ')} {typingUsers.filter(u => u !== username).length === 1 ? 'is' : 'are'} typing...
-              </span>
-            </div>
-          )}
-
+            )}
             <div ref={messagesEndRef} />
           </div>
 
