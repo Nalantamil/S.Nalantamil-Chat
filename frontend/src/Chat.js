@@ -2,7 +2,10 @@ import React, { useState, useEffect, useRef } from 'react';
 import { io } from 'socket.io-client';
 import axios from 'axios';
 
-const socket = io('https://s-nalantamil-chat.onrender.com');
+const socket = io('https://s-nalantamil-chat.onrender.com', {
+  transports: ['websocket'],
+  upgrade: false
+});
 
 function Chat({ username, onLogout }) {
   const [messages, setMessages] = useState([]);
