@@ -5,6 +5,9 @@ from pymongo import MongoClient
 import bcrypt
 import jwt
 import datetime
+import threading
+import requests
+import time
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'your-secret-key-change-later'
@@ -176,5 +179,16 @@ def handle_reaction(data):
         'reactions': reactions
     }, broadcast=True)
 
+def keep_alive():
+    while True:
+        time.sleep(600)  # every 10 minutes
+        try:
+            requests.get('https://s-nalantamil-chat.onrender.com/')
+        except:
+            pass
+
 if __name__ == '__main__':
+    t = threading.Thread(target=keep_alive)
+    t.daemon = True
+    t.start()
     socketio.run(app, debug=True, port=5000)
