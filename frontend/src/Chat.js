@@ -18,6 +18,29 @@ function Chat({ username, onLogout }) {
 
   const REACTIONS = ['👍', '❤️', '😂', '😮', '😢'];
 
+  // ===== DATE SEPARATOR HELPER =====
+  const getDateLabel = (timestamp) => {
+    if (!timestamp) return '';
+    const date = new Date(timestamp + 'Z');
+    const today = new Date();
+    const yesterday = new Date();
+    yesterday.setDate(today.getDate() - 1);
+
+    if (date.toDateString() === today.toDateString()) return 'Today';
+    if (date.toDateString() === yesterday.toDateString()) return 'Yesterday';
+    return date.toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' });
+  };
+
+  const shouldShowDateSeparator = (messages, index) => {
+    if (index === 0) return true;
+    const prev = messages[index - 1];
+    const curr = messages[index];
+    if (!prev.timestamp || !curr.timestamp) return false;
+    const prevDate = new Date(prev.timestamp + 'Z').toDateString();
+    const currDate = new Date(curr.timestamp + 'Z').toDateString();
+    return prevDate !== currDate;
+  };
+
   useEffect(() => {
     axios.get('https://s-nalantamil-chat.onrender.com/messages').then((res) => {
       setMessages(res.data);
@@ -145,6 +168,20 @@ function Chat({ username, onLogout }) {
           50% { transform: translateY(-4px); }
         }
 
+        @keyframes float {
+          0%, 100% { transform: translateY(0px); }
+          50% { transform: translateY(-10px); }
+        }
+
+        @keyframes pulse {
+          0%, 100% { opacity: 0.6; }
+          50% { opacity: 1; }
+        }
+
+        @keyframes ripple {
+          to { transform: scale(4); opacity: 0; }
+        }
+
         body {
           background: linear-gradient(-45deg, #0f0c29, #302b63, #24243e, #1a1a2e);
           background-size: 400% 400%;
@@ -159,6 +196,7 @@ function Chat({ username, onLogout }) {
           overflow: hidden;
         }
 
+        /* ===== SIDEBAR WITH TRANSITION ===== */
         .sidebar {
           width: 260px;
           min-width: 260px;
@@ -166,11 +204,13 @@ function Chat({ username, onLogout }) {
           border-right: 1px solid rgba(255,255,255,0.07);
           display: flex;
           flex-direction: column;
+          transition: width 0.3s ease, transform 0.3s ease;
         }
 
         .sidebar-logo {
           padding: 28px 24px 20px;
           border-bottom: 1px solid rgba(255,255,255,0.07);
+          transition: padding 0.3s ease;
         }
 
         .logo-row { display: flex; align-items: center; gap: 10px; }
@@ -178,7 +218,10 @@ function Chat({ username, onLogout }) {
         .logo-emoji {
           font-size: 26px;
           filter: drop-shadow(0 0 8px rgba(102,126,234,0.9));
+          transition: transform 0.3s ease;
         }
+
+        .logo-emoji:hover { transform: scale(1.2) rotate(10deg); }
 
         .logo-name {
           font-size: 20px;
@@ -209,6 +252,12 @@ function Chat({ username, onLogout }) {
           background: rgba(102,126,234,0.2);
           border: 1px solid rgba(102,126,234,0.3);
           cursor: pointer;
+          transition: all 0.3s ease;
+        }
+
+        .room-item:hover {
+          background: rgba(102,126,234,0.35);
+          transform: translateX(4px);
         }
 
         .room-icon { font-size: 18px; }
@@ -221,6 +270,7 @@ function Chat({ username, onLogout }) {
           background: #2ecc71;
           border-radius: 50%;
           box-shadow: 0 0 6px #2ecc71;
+          animation: pulse 2s ease-in-out infinite;
         }
 
         .sidebar-spacer { flex: 1; }
@@ -231,7 +281,10 @@ function Chat({ username, onLogout }) {
           display: flex;
           align-items: center;
           gap: 12px;
+          transition: background 0.3s ease;
         }
+
+        .sidebar-user:hover { background: rgba(255,255,255,0.03); }
 
         .user-avatar {
           width: 38px; height: 38px;
@@ -239,7 +292,10 @@ function Chat({ username, onLogout }) {
           background: linear-gradient(135deg, #667eea, #764ba2);
           display: flex; align-items: center; justify-content: center;
           font-size: 16px; font-weight: 700; color: white; flex-shrink: 0;
+          transition: transform 0.3s ease;
         }
+
+        .user-avatar:hover { transform: scale(1.1); }
 
         .user-info { flex: 1; overflow: hidden; }
         .user-name { font-size: 14px; font-weight: 600; color: white; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -252,10 +308,31 @@ function Chat({ username, onLogout }) {
           width: 34px; height: 34px;
           border-radius: 10px; cursor: pointer;
           display: flex; align-items: center; justify-content: center;
-          font-size: 16px; transition: all 0.2s; flex-shrink: 0;
+          font-size: 16px; transition: all 0.2s;
+          flex-shrink: 0; position: relative; overflow: hidden;
         }
 
         .logout-icon-btn:hover { background: rgba(231,76,60,0.35); transform: scale(1.05); }
+
+        /* ===== RIPPLE EFFECT ===== */
+        .ripple-btn {
+          position: relative; overflow: hidden;
+        }
+
+        .ripple-btn::after {
+          content: '';
+          position: absolute;
+          width: 10px; height: 10px;
+          background: rgba(255,255,255,0.3);
+          border-radius: 50%;
+          top: 50%; left: 50%;
+          transform: translate(-50%, -50%) scale(0);
+          opacity: 1;
+        }
+
+        .ripple-btn:active::after {
+          animation: ripple 0.4s ease-out;
+        }
 
         .chat-main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
 
@@ -270,7 +347,10 @@ function Chat({ username, onLogout }) {
           width: 42px; height: 42px; border-radius: 12px;
           background: linear-gradient(135deg, #667eea, #764ba2);
           display: flex; align-items: center; justify-content: center; font-size: 20px;
+          transition: transform 0.3s ease;
         }
+
+        .chat-header-avatar:hover { transform: scale(1.1); }
 
         .chat-header-info { flex: 1; }
         .chat-header-name { font-size: 16px; font-weight: 700; color: white; }
@@ -279,18 +359,53 @@ function Chat({ username, onLogout }) {
           display: flex; align-items: center; gap: 6px;
         }
 
-        .status-dot { width: 7px; height: 7px; background: #2ecc71; border-radius: 50%; box-shadow: 0 0 5px #2ecc71; }
+        .status-dot {
+          width: 7px; height: 7px; background: #2ecc71;
+          border-radius: 50%; box-shadow: 0 0 5px #2ecc71;
+          animation: pulse 2s ease-in-out infinite;
+        }
+
         .msg-count { font-size: 12px; color: rgba(255,255,255,0.3); background: rgba(255,255,255,0.07); padding: 4px 12px; border-radius: 20px; }
 
         .messages-area {
           flex: 1; overflow-y: auto;
           padding: 24px 28px;
           display: flex; flex-direction: column; gap: 14px;
+          scroll-behavior: smooth;
         }
 
         .messages-area::-webkit-scrollbar { width: 5px; }
         .messages-area::-webkit-scrollbar-track { background: transparent; }
         .messages-area::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 3px; }
+        .messages-area::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.3); }
+
+        /* ===== DATE SEPARATOR ===== */
+        .date-separator {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          align-self: stretch;
+          margin: 8px 0;
+          animation: fadeIn 0.3s ease;
+        }
+
+        .date-separator-line {
+          flex: 1;
+          height: 1px;
+          background: rgba(255,255,255,0.1);
+        }
+
+        .date-separator-label {
+          font-size: 11px;
+          font-weight: 600;
+          color: rgba(255,255,255,0.35);
+          padding: 4px 12px;
+          background: rgba(255,255,255,0.05);
+          border-radius: 20px;
+          border: 1px solid rgba(255,255,255,0.08);
+          letter-spacing: 0.5px;
+          white-space: nowrap;
+        }
 
         .system-msg {
           text-align: center; color: rgba(255,255,255,0.3); font-size: 12px;
@@ -302,8 +417,10 @@ function Chat({ username, onLogout }) {
           display: flex; gap: 10px;
           animation: fadeIn 0.3s ease;
           max-width: 70%; position: relative;
+          transition: transform 0.2s ease;
         }
 
+        .msg-row:hover { transform: translateY(-1px); }
         .msg-row.mine { align-self: flex-end; flex-direction: row-reverse; }
         .msg-row.theirs { align-self: flex-start; }
 
@@ -313,8 +430,10 @@ function Chat({ username, onLogout }) {
           display: flex; align-items: center; justify-content: center;
           font-size: 13px; font-weight: 700; color: white;
           flex-shrink: 0; align-self: flex-end;
+          transition: transform 0.2s ease;
         }
 
+        .msg-avatar:hover { transform: scale(1.15); }
         .msg-row.mine .msg-avatar { background: linear-gradient(135deg, #667eea, #764ba2); }
 
         .msg-content { display: flex; flex-direction: column; gap: 4px; position: relative; }
@@ -327,6 +446,7 @@ function Chat({ username, onLogout }) {
           padding: 11px 16px; border-radius: 18px;
           font-size: 14px; line-height: 1.5;
           word-break: break-word; max-width: 100%; position: relative;
+          transition: box-shadow 0.2s ease;
         }
 
         .msg-row.mine .msg-bubble {
@@ -335,9 +455,17 @@ function Chat({ username, onLogout }) {
           box-shadow: 0 4px 15px rgba(102,126,234,0.3);
         }
 
+        .msg-row.mine .msg-bubble:hover {
+          box-shadow: 0 6px 20px rgba(102,126,234,0.5);
+        }
+
         .msg-row.theirs .msg-bubble {
           background: rgba(255,255,255,0.09); color: rgba(255,255,255,0.9);
           border: 1px solid rgba(255,255,255,0.08); border-bottom-left-radius: 4px;
+        }
+
+        .msg-row.theirs .msg-bubble:hover {
+          background: rgba(255,255,255,0.12);
         }
 
         .msg-footer {
@@ -361,9 +489,10 @@ function Chat({ username, onLogout }) {
           color: rgba(255,255,255,0.7);
           padding: 3px 10px; border-radius: 8px;
           font-size: 11px; cursor: pointer; transition: all 0.2s;
+          position: relative; overflow: hidden;
         }
 
-        .action-btn:hover { background: rgba(255,255,255,0.2); color: white; }
+        .action-btn:hover { background: rgba(255,255,255,0.2); color: white; transform: scale(1.05); }
         .action-btn.delete:hover { background: rgba(231,76,60,0.3); border-color: rgba(231,76,60,0.5); color: #e74c3c; }
 
         .reactions-bar { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
@@ -377,7 +506,7 @@ function Chat({ username, onLogout }) {
           display: flex; align-items: center; gap: 4px;
         }
 
-        .reaction-btn:hover { background: rgba(255,255,255,0.18); transform: scale(1.1); }
+        .reaction-btn:hover { background: rgba(255,255,255,0.18); transform: scale(1.15); }
         .reaction-btn.reacted { background: rgba(102,126,234,0.25); border-color: rgba(102,126,234,0.5); }
         .reaction-count { font-size: 11px; color: rgba(255,255,255,0.7); }
 
@@ -400,22 +529,32 @@ function Chat({ username, onLogout }) {
           border: 1.5px solid #667eea; border-radius: 10px;
           color: white; font-size: 14px; padding: 8px 12px;
           outline: none; width: 100%; min-width: 200px;
+          transition: box-shadow 0.2s ease;
         }
+
+        .edit-input:focus { box-shadow: 0 0 0 3px rgba(102,126,234,0.2); }
 
         .edit-actions { display: flex; gap: 6px; margin-top: 4px; }
 
         .save-btn {
           background: linear-gradient(135deg, #667eea, #764ba2);
           border: none; color: white; padding: 4px 12px;
-          border-radius: 8px; font-size: 12px; cursor: pointer; font-weight: 600;
+          border-radius: 8px; font-size: 12px; cursor: pointer;
+          font-weight: 600; transition: all 0.2s;
+          position: relative; overflow: hidden;
         }
+
+        .save-btn:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(102,126,234,0.4); }
 
         .cancel-btn {
           background: rgba(255,255,255,0.1);
           border: 1px solid rgba(255,255,255,0.2);
           color: rgba(255,255,255,0.7); padding: 4px 12px;
           border-radius: 8px; font-size: 12px; cursor: pointer;
+          transition: all 0.2s;
         }
+
+        .cancel-btn:hover { background: rgba(255,255,255,0.2); }
 
         .typing-indicator {
           display: flex; align-items: center; gap: 8px;
@@ -434,15 +573,40 @@ function Chat({ username, onLogout }) {
         .typing-dot:nth-child(2) { animation-delay: 0.2s; }
         .typing-dot:nth-child(3) { animation-delay: 0.4s; }
 
+        /* ===== BETTER EMPTY STATE ===== */
         .empty-chat {
           flex: 1; display: flex; flex-direction: column;
           align-items: center; justify-content: center;
-          gap: 14px; color: rgba(255,255,255,0.2);
+          gap: 16px; color: rgba(255,255,255,0.2);
         }
 
-        .empty-icon { font-size: 56px; }
-        .empty-title { font-size: 18px; font-weight: 600; }
-        .empty-sub { font-size: 13px; }
+        .empty-icon {
+          font-size: 72px;
+          animation: float 3s ease-in-out infinite;
+          filter: drop-shadow(0 0 20px rgba(102,126,234,0.4));
+        }
+
+        .empty-title {
+          font-size: 22px; font-weight: 700;
+          color: rgba(255,255,255,0.5);
+          animation: fadeIn 0.6s ease;
+        }
+
+        .empty-sub {
+          font-size: 14px;
+          color: rgba(255,255,255,0.25);
+          animation: fadeIn 0.8s ease;
+        }
+
+        .empty-hint {
+          font-size: 12px;
+          color: rgba(102,126,234,0.6);
+          background: rgba(102,126,234,0.1);
+          border: 1px solid rgba(102,126,234,0.2);
+          padding: 8px 16px;
+          border-radius: 20px;
+          animation: fadeIn 1s ease, pulse 3s ease-in-out infinite;
+        }
 
         .input-area {
           padding: 16px 28px 20px;
@@ -478,9 +642,11 @@ function Chat({ username, onLogout }) {
           font-size: 18px; cursor: pointer;
           display: flex; align-items: center; justify-content: center;
           transition: all 0.2s; flex-shrink: 0;
+          position: relative; overflow: hidden;
         }
 
         .send-btn:hover { transform: scale(1.08); box-shadow: 0 4px 15px rgba(102,126,234,0.5); }
+        .send-btn:active { transform: scale(0.95); }
 
         @media (max-width: 768px) {
           .chat-layout { flex-direction: column; }
@@ -529,7 +695,7 @@ function Chat({ username, onLogout }) {
               <div className="user-name">{username}</div>
               <div className="user-status">● Online</div>
             </div>
-            <button className="logout-icon-btn" onClick={onLogout} title="Logout">⏻</button>
+            <button className="logout-icon-btn ripple-btn" onClick={onLogout} title="Logout">⏻</button>
           </div>
         </div>
 
@@ -549,82 +715,97 @@ function Chat({ username, onLogout }) {
           <div className="messages-area">
             {messages.length === 0 ? (
               <div className="empty-chat">
-                <span className="empty-icon">👋</span>
-                <span className="empty-title">Welcome to #general</span>
-                <span className="empty-sub">Be the first one to say hello!</span>
+                <span className="empty-icon">💬</span>
+                <div className="empty-title">No messages yet</div>
+                <div className="empty-sub">Be the first one to say hello!</div>
+                <div className="empty-hint">✨ Send a message below to start the conversation</div>
               </div>
             ) : (
               messages.map((msg, index) => {
                 if (msg.type === 'system') {
                   return <div key={index} className="system-msg">— {msg.text} —</div>;
                 }
+
                 const isMine = msg.username === username;
                 const isEditing = editingId === msg._id;
                 const reactions = msg.reactions || {};
+                const showDate = shouldShowDateSeparator(messages, index);
+
                 return (
-                  <div key={msg._id || index} className={`msg-row ${isMine ? 'mine' : 'theirs'}`}>
-                    <div className="msg-avatar">{getInitial(msg.username)}</div>
-                    <div className="msg-content">
-                      {!isMine && <span className="msg-sender">{msg.username}</span>}
-                      {isEditing ? (
-                        <>
-                          <input
-                            className="edit-input"
-                            value={editText}
-                            onChange={(e) => setEditText(e.target.value)}
-                            onKeyDown={(e) => e.key === 'Enter' && saveEdit(msg._id)}
-                            autoFocus
-                          />
-                          <div className="edit-actions">
-                            <button className="save-btn" onClick={() => saveEdit(msg._id)}>Save</button>
-                            <button className="cancel-btn" onClick={() => setEditingId(null)}>Cancel</button>
-                          </div>
-                        </>
-                      ) : (
-                        <>
-                          <div className="msg-bubble">{msg.text}</div>
-                          <div className="msg-footer">
-                            <span className="msg-time">{formatTime(msg.timestamp)}</span>
-                            {msg.edited && <span className="edited-tag">(edited)</span>}
-                          </div>
-                          {Object.keys(reactions).length > 0 && (
-                            <div className="reactions-bar">
-                              {Object.entries(reactions).map(([emoji, users]) =>
-                                users.length > 0 ? (
+                  <React.Fragment key={msg._id || index}>
+                    {/* DATE SEPARATOR */}
+                    {showDate && msg.timestamp && (
+                      <div className="date-separator">
+                        <div className="date-separator-line"></div>
+                        <span className="date-separator-label">{getDateLabel(msg.timestamp)}</span>
+                        <div className="date-separator-line"></div>
+                      </div>
+                    )}
+
+                    <div className={`msg-row ${isMine ? 'mine' : 'theirs'}`}>
+                      <div className="msg-avatar">{getInitial(msg.username)}</div>
+                      <div className="msg-content">
+                        {!isMine && <span className="msg-sender">{msg.username}</span>}
+                        {isEditing ? (
+                          <>
+                            <input
+                              className="edit-input"
+                              value={editText}
+                              onChange={(e) => setEditText(e.target.value)}
+                              onKeyDown={(e) => e.key === 'Enter' && saveEdit(msg._id)}
+                              autoFocus
+                            />
+                            <div className="edit-actions">
+                              <button className="save-btn ripple-btn" onClick={() => saveEdit(msg._id)}>Save</button>
+                              <button className="cancel-btn" onClick={() => setEditingId(null)}>Cancel</button>
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <div className="msg-bubble">{msg.text}</div>
+                            <div className="msg-footer">
+                              <span className="msg-time">{formatTime(msg.timestamp)}</span>
+                              {msg.edited && <span className="edited-tag">(edited)</span>}
+                            </div>
+                            {Object.keys(reactions).length > 0 && (
+                              <div className="reactions-bar">
+                                {Object.entries(reactions).map(([emoji, users]) =>
+                                  users.length > 0 ? (
+                                    <button
+                                      key={emoji}
+                                      className={`reaction-btn ${users.includes(username) ? 'reacted' : ''}`}
+                                      onClick={() => addReaction(msg._id, emoji)}
+                                    >
+                                      {emoji} <span className="reaction-count">{users.length}</span>
+                                    </button>
+                                  ) : null
+                                )}
+                              </div>
+                            )}
+                            <div className="msg-actions">
+                              <div className="reaction-picker">
+                                {REACTIONS.map((emoji) => (
                                   <button
                                     key={emoji}
-                                    className={`reaction-btn ${users.includes(username) ? 'reacted' : ''}`}
+                                    className="reaction-pick-btn"
                                     onClick={() => addReaction(msg._id, emoji)}
                                   >
-                                    {emoji} <span className="reaction-count">{users.length}</span>
+                                    {emoji}
                                   </button>
-                                ) : null
+                                ))}
+                              </div>
+                              {isMine && (
+                                <>
+                                  <button className="action-btn ripple-btn" onClick={() => startEdit(msg)}>✏️</button>
+                                  <button className="action-btn delete ripple-btn" onClick={() => deleteMessage(msg._id)}>🗑️</button>
+                                </>
                               )}
                             </div>
-                          )}
-                          <div className="msg-actions">
-                            <div className="reaction-picker">
-                              {REACTIONS.map((emoji) => (
-                                <button
-                                  key={emoji}
-                                  className="reaction-pick-btn"
-                                  onClick={() => addReaction(msg._id, emoji)}
-                                >
-                                  {emoji}
-                                </button>
-                              ))}
-                            </div>
-                            {isMine && (
-                              <>
-                                <button className="action-btn" onClick={() => startEdit(msg)}>✏️</button>
-                                <button className="action-btn delete" onClick={() => deleteMessage(msg._id)}>🗑️</button>
-                              </>
-                            )}
-                          </div>
-                        </>
-                      )}
+                          </>
+                        )}
+                      </div>
                     </div>
-                  </div>
+                  </React.Fragment>
                 );
               })
             )}
@@ -652,7 +833,7 @@ function Chat({ username, onLogout }) {
                 value={input}
                 onChange={handleInputChange}
               />
-              <button type="submit" className="send-btn">➤</button>
+              <button type="submit" className="send-btn ripple-btn">➤</button>
             </form>
           </div>
         </div>
