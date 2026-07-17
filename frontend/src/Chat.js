@@ -16,6 +16,19 @@ const BACKGROUNDS = [
   { id: 'midnight', label: '🌙 Midnight', value: 'linear-gradient(-45deg, #000428, #004e92)', type: 'gradient' },
 ];
 
+const EMOJI_LIST = [
+  '😀','😃','😄','😁','😆','😅','🤣','😂','🙂','😊',
+  '😇','🥰','😍','🤩','😘','😗','😚','😙','🥲','😋',
+  '😛','😜','🤪','😝','🤑','🤗','🤭','🤫','🤔','🤐',
+  '😐','😑','😶','😏','😒','🙄','😬','🤥','😌','😔',
+  '😪','🤤','😴','😷','🤒','🤕','🤢','🤧','🥵','🥶',
+  '😱','😨','😰','😥','😓','🤯','😤','😡','🤬','😈',
+  '💀','💩','🤡','👻','👽','🤖','😺','😸','😹','😻',
+  '👍','👎','👏','🙌','🤝','🤜','👊','✊','🤛','💪',
+  '❤️','🧡','💛','💚','💙','💜','🖤','🤍','🤎','💔',
+  '🔥','⭐','✨','💫','🎉','🎊','🎈','🎁','🏆','🎯',
+];
+
 function Chat({ username, onLogout }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
@@ -25,10 +38,25 @@ function Chat({ username, onLogout }) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [showBgPicker, setShowBgPicker] = useState(false);
   const [selectedBg, setSelectedBg] = useState(BACKGROUNDS[0]);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [showSearch, setShowSearch] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [isTabFocused, setIsTabFocused] = useState(true);
   const messagesEndRef = useRef(null);
   const typingTimeoutRef = useRef(null);
+  const searchInputRef = useRef(null);
 
   const REACTIONS = ['👍', '❤️', '😂', '😮', '😢'];
+
+  // ===== TAB FOCUS TRACKING =====
+  useEffect(() => {
+    const onFocus = () => { setIsTabFocused(true); setUnreadCount(0); };
+    const onBlur = () => setIsTabFocused(false);
+    window.addEventListener('focus', onFocus);
+    window.addEventListener('blur', onBlur);
+    return () => { window.removeEventListener('focus', onFocus); window.removeEventListener('blur', onBlur); };
+  }, []);
 
   const getDateLabel = (timestamp) => {
     if (!timestamp) return '';
@@ -54,7 +82,12 @@ function Chat({ username, onLogout }) {
       setMessages(res.data);
     });
     socket.emit('join', { username });
-    socket.on('message', (msg) => setMessages((prev) => [...prev, { ...msg, reactions: {} }]));
+    socket.on('message', (msg) => {
+      setMessages((prev) => [...prev, { ...msg, reactions: {} }]);
+      if (!isTabFocused && msg.username !== username) {
+        setUnreadCount(prev => prev + 1);
+      }
+    });
     socket.on('message_deleted', ({ message_id }) => setMessages((prev) => prev.filter((m) => m._id !== message_id)));
     socket.on('message_edited', ({ message_id, text }) => setMessages((prev) => prev.map((m) => m._id === message_id ? { ...m, text, edited: true } : m)));
     socket.on('reaction_updated', ({ message_id, reactions }) => setMessages((prev) => prev.map((m) => m._id === message_id ? { ...m, reactions } : m)));
@@ -64,11 +97,15 @@ function Chat({ username, onLogout }) {
       socket.off('message'); socket.off('message_deleted'); socket.off('message_edited');
       socket.off('reaction_updated'); socket.off('user_typing'); socket.off('user_stop_typing');
     };
-  }, [username]);
+  }, [username, isTabFocused]);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, typingUsers]);
+    if (!showSearch) messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages, typingUsers, showSearch]);
+
+  useEffect(() => {
+    if (showSearch && searchInputRef.current) searchInputRef.current.focus();
+  }, [showSearch]);
 
   const handleInputChange = (e) => {
     setInput(e.target.value);
@@ -88,6 +125,7 @@ function Chat({ username, onLogout }) {
     socket.emit('stop_typing', { username });
     clearTimeout(typingTimeoutRef.current);
     setInput('');
+    setShowEmojiPicker(false);
   };
 
   const deleteMessage = (message_id) => socket.emit('delete_message', { message_id });
@@ -105,6 +143,19 @@ function Chat({ username, onLogout }) {
   };
 
   const getInitial = (name) => name ? name[0].toUpperCase() : '?';
+
+  // ===== SEARCH FILTER =====
+  const filteredMessages = searchQuery.trim()
+    ? messages.filter(m => m.type !== 'system' && m.text?.toLowerCase().includes(searchQuery.toLowerCase()))
+    : messages;
+
+  // ===== SEEN STATUS =====
+  const getSeenStatus = (msg, index) => {
+    if (msg.username !== username) return null;
+    const isLast = index === messages.filter(m => m.type !== 'system').length - 1;
+    if (isLast) return '✓✓';
+    return '✓';
+  };
 
   return (
     <>
@@ -139,6 +190,10 @@ function Chat({ username, onLogout }) {
           from { opacity: 0; transform: translateX(-10px); }
           to { opacity: 1; transform: translateX(0); }
         }
+        @keyframes slideDown {
+          from { opacity: 0; transform: translateY(-10px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
 
         body {
           background: ${selectedBg.value};
@@ -147,11 +202,8 @@ function Chat({ username, onLogout }) {
         }
 
         .chat-layout {
-          display: flex;
-          height: 100vh;
-          width: 100vw;
-          font-family: 'Segoe UI', sans-serif;
-          overflow: hidden;
+          display: flex; height: 100vh; width: 100vw;
+          font-family: 'Segoe UI', sans-serif; overflow: hidden;
         }
 
         /* ===== SIDEBAR ===== */
@@ -160,313 +212,171 @@ function Chat({ username, onLogout }) {
           min-width: ${sidebarOpen ? '260px' : '0px'};
           background: rgba(0,0,0,0.35);
           border-right: 1px solid rgba(255,255,255,0.07);
-          display: flex;
-          flex-direction: column;
+          display: flex; flex-direction: column;
           transition: width 0.3s ease, min-width 0.3s ease, opacity 0.3s ease;
           overflow: hidden;
           opacity: ${sidebarOpen ? '1' : '0'};
         }
 
-        .sidebar-logo {
-          padding: 28px 24px 20px;
-          border-bottom: 1px solid rgba(255,255,255,0.07);
-        }
-
+        .sidebar-logo { padding: 28px 24px 20px; border-bottom: 1px solid rgba(255,255,255,0.07); }
         .logo-row { display: flex; align-items: center; gap: 10px; }
-
-        .logo-emoji {
-          font-size: 26px;
-          filter: drop-shadow(0 0 8px rgba(102,126,234,0.9));
-          transition: transform 0.3s ease;
-          cursor: pointer;
-        }
+        .logo-emoji { font-size: 26px; filter: drop-shadow(0 0 8px rgba(102,126,234,0.9)); transition: transform 0.3s ease; cursor: pointer; }
         .logo-emoji:hover { transform: scale(1.2) rotate(10deg); }
+        .logo-name { font-size: 20px; font-weight: 800; background: linear-gradient(135deg, #667eea, #f093fb); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; letter-spacing: 2px; }
+        .sidebar-section-title { padding: 20px 24px 10px; font-size: 11px; font-weight: 700; color: rgba(255,255,255,0.3); letter-spacing: 1.5px; text-transform: uppercase; }
 
-        .logo-name {
-          font-size: 20px; font-weight: 800;
-          background: linear-gradient(135deg, #667eea, #f093fb);
-          -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-          background-clip: text; letter-spacing: 2px;
-        }
-
-        .sidebar-section-title {
-          padding: 20px 24px 10px; font-size: 11px; font-weight: 700;
-          color: rgba(255,255,255,0.3); letter-spacing: 1.5px; text-transform: uppercase;
-        }
-
-        .room-item {
-          margin: 0 12px; padding: 12px 14px; border-radius: 12px;
-          display: flex; align-items: center; gap: 12px;
-          background: rgba(102,126,234,0.2); border: 1px solid rgba(102,126,234,0.3);
-          cursor: pointer; transition: all 0.3s ease;
-        }
+        .room-item { margin: 0 12px; padding: 12px 14px; border-radius: 12px; display: flex; align-items: center; gap: 12px; background: rgba(102,126,234,0.2); border: 1px solid rgba(102,126,234,0.3); cursor: pointer; transition: all 0.3s ease; position: relative; }
         .room-item:hover { background: rgba(102,126,234,0.35); transform: translateX(4px); }
+
+        /* ===== NOTIFICATION BADGE ===== */
+        .notif-badge {
+          background: linear-gradient(135deg, #667eea, #764ba2);
+          color: white; font-size: 10px; font-weight: 800;
+          min-width: 18px; height: 18px; border-radius: 9px;
+          display: flex; align-items: center; justify-content: center;
+          padding: 0 4px; animation: pulse 1.5s ease-in-out infinite;
+          box-shadow: 0 0 8px rgba(102,126,234,0.6);
+        }
 
         .room-icon { font-size: 18px; }
         .room-info { flex: 1; }
         .room-name { font-size: 14px; font-weight: 600; color: white; }
         .room-sub { font-size: 11px; color: rgba(255,255,255,0.4); margin-top: 2px; }
-
-        .online-dot {
-          width: 8px; height: 8px; background: #2ecc71;
-          border-radius: 50%; box-shadow: 0 0 6px #2ecc71;
-          animation: pulse 2s ease-in-out infinite;
-        }
-
+        .online-dot { width: 8px; height: 8px; background: #2ecc71; border-radius: 50%; box-shadow: 0 0 6px #2ecc71; animation: pulse 2s ease-in-out infinite; }
         .sidebar-spacer { flex: 1; }
-
-        .sidebar-user {
-          padding: 16px; border-top: 1px solid rgba(255,255,255,0.07);
-          display: flex; align-items: center; gap: 12px;
-          transition: background 0.3s ease;
-        }
+        .sidebar-user { padding: 16px; border-top: 1px solid rgba(255,255,255,0.07); display: flex; align-items: center; gap: 12px; transition: background 0.3s ease; }
         .sidebar-user:hover { background: rgba(255,255,255,0.03); }
-
-        .user-avatar {
-          width: 38px; height: 38px; border-radius: 50%;
-          background: linear-gradient(135deg, #667eea, #764ba2);
-          display: flex; align-items: center; justify-content: center;
-          font-size: 16px; font-weight: 700; color: white; flex-shrink: 0;
-          transition: transform 0.3s ease;
-        }
+        .user-avatar { width: 38px; height: 38px; border-radius: 50%; background: linear-gradient(135deg, #667eea, #764ba2); display: flex; align-items: center; justify-content: center; font-size: 16px; font-weight: 700; color: white; flex-shrink: 0; transition: transform 0.3s ease; }
         .user-avatar:hover { transform: scale(1.1); }
-
         .user-info { flex: 1; overflow: hidden; }
         .user-name { font-size: 14px; font-weight: 600; color: white; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .user-status { font-size: 11px; color: #2ecc71; margin-top: 2px; }
-
-        .logout-icon-btn {
-          background: rgba(231,76,60,0.15); border: 1px solid rgba(231,76,60,0.3);
-          color: #e74c3c; width: 34px; height: 34px; border-radius: 10px; cursor: pointer;
-          display: flex; align-items: center; justify-content: center;
-          font-size: 16px; transition: all 0.2s; flex-shrink: 0; position: relative; overflow: hidden;
-        }
+        .logout-icon-btn { background: rgba(231,76,60,0.15); border: 1px solid rgba(231,76,60,0.3); color: #e74c3c; width: 34px; height: 34px; border-radius: 10px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 16px; transition: all 0.2s; flex-shrink: 0; position: relative; overflow: hidden; }
         .logout-icon-btn:hover { background: rgba(231,76,60,0.35); transform: scale(1.05); }
 
-        /* ===== RIPPLE ===== */
         .ripple-btn { position: relative; overflow: hidden; }
-        .ripple-btn::after {
-          content: ''; position: absolute; width: 10px; height: 10px;
-          background: rgba(255,255,255,0.3); border-radius: 50%;
-          top: 50%; left: 50%; transform: translate(-50%, -50%) scale(0); opacity: 1;
-        }
+        .ripple-btn::after { content: ''; position: absolute; width: 10px; height: 10px; background: rgba(255,255,255,0.3); border-radius: 50%; top: 50%; left: 50%; transform: translate(-50%, -50%) scale(0); opacity: 1; }
         .ripple-btn:active::after { animation: ripple 0.4s ease-out; }
 
-        /* ===== CHAT MAIN ===== */
         .chat-main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
 
         /* ===== CHAT HEADER ===== */
-        .chat-header {
-          padding: 18px 28px; background: rgba(0,0,0,0.2);
-          border-bottom: 1px solid rgba(255,255,255,0.07);
-          display: flex; align-items: center; gap: 14px;
-        }
+        .chat-header { padding: 18px 28px; background: rgba(0,0,0,0.2); border-bottom: 1px solid rgba(255,255,255,0.07); display: flex; align-items: center; gap: 14px; position: relative; }
 
-        /* ===== SIDEBAR TOGGLE BUTTON ===== */
-        .sidebar-toggle {
-          background: rgba(255,255,255,0.08);
-          border: 1px solid rgba(255,255,255,0.12);
-          color: white; width: 34px; height: 34px;
-          border-radius: 10px; cursor: pointer;
-          display: flex; align-items: center; justify-content: center;
-          font-size: 16px; transition: all 0.3s ease; flex-shrink: 0;
-        }
+        .sidebar-toggle { background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.12); color: white; width: 34px; height: 34px; border-radius: 10px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 16px; transition: all 0.3s ease; flex-shrink: 0; }
         .sidebar-toggle:hover { background: rgba(255,255,255,0.15); transform: scale(1.05); }
 
-        .chat-header-avatar {
-          width: 42px; height: 42px; border-radius: 12px;
-          background: linear-gradient(135deg, #667eea, #764ba2);
-          display: flex; align-items: center; justify-content: center; font-size: 20px;
-          transition: transform 0.3s ease;
-        }
+        .chat-header-avatar { width: 42px; height: 42px; border-radius: 12px; background: linear-gradient(135deg, #667eea, #764ba2); display: flex; align-items: center; justify-content: center; font-size: 20px; transition: transform 0.3s ease; }
         .chat-header-avatar:hover { transform: scale(1.1); }
-
         .chat-header-info { flex: 1; }
         .chat-header-name { font-size: 16px; font-weight: 700; color: white; }
-        .chat-header-status {
-          font-size: 12px; color: rgba(255,255,255,0.4); margin-top: 2px;
-          display: flex; align-items: center; gap: 6px;
-        }
-
-        .status-dot {
-          width: 7px; height: 7px; background: #2ecc71;
-          border-radius: 50%; box-shadow: 0 0 5px #2ecc71;
-          animation: pulse 2s ease-in-out infinite;
-        }
-
+        .chat-header-status { font-size: 12px; color: rgba(255,255,255,0.4); margin-top: 2px; display: flex; align-items: center; gap: 6px; }
+        .status-dot { width: 7px; height: 7px; background: #2ecc71; border-radius: 50%; box-shadow: 0 0 5px #2ecc71; animation: pulse 2s ease-in-out infinite; }
         .msg-count { font-size: 12px; color: rgba(255,255,255,0.3); background: rgba(255,255,255,0.07); padding: 4px 12px; border-radius: 20px; }
 
-        /* ===== BG PICKER BUTTON ===== */
-        .bg-picker-btn {
-          background: rgba(255,255,255,0.08);
-          border: 1px solid rgba(255,255,255,0.12);
-          color: white; width: 34px; height: 34px;
-          border-radius: 10px; cursor: pointer;
-          display: flex; align-items: center; justify-content: center;
-          font-size: 16px; transition: all 0.3s ease; flex-shrink: 0;
-          position: relative;
+        /* ===== SEARCH ===== */
+        .search-btn { background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.12); color: white; width: 34px; height: 34px; border-radius: 10px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 16px; transition: all 0.3s ease; flex-shrink: 0; }
+        .search-btn:hover { background: rgba(255,255,255,0.15); transform: scale(1.05); }
+        .search-btn.active { background: rgba(102,126,234,0.3); border-color: #667eea; }
+
+        .search-bar {
+          position: absolute; top: 70px; left: 0; right: 0;
+          padding: 12px 28px; background: rgba(0,0,0,0.4);
+          border-bottom: 1px solid rgba(255,255,255,0.07);
+          animation: slideDown 0.2s ease; z-index: 10;
+          display: flex; align-items: center; gap: 10px;
         }
+
+        .search-input {
+          flex: 1; background: rgba(255,255,255,0.08);
+          border: 1.5px solid rgba(255,255,255,0.15);
+          border-radius: 12px; color: white; font-size: 14px;
+          padding: 10px 16px; outline: none; transition: all 0.3s;
+        }
+        .search-input:focus { border-color: #667eea; background: rgba(102,126,234,0.1); box-shadow: 0 0 0 3px rgba(102,126,234,0.12); }
+        .search-input::placeholder { color: rgba(255,255,255,0.3); }
+
+        .search-results-count { font-size: 12px; color: rgba(255,255,255,0.4); white-space: nowrap; }
+
+        .search-close { background: none; border: none; color: rgba(255,255,255,0.5); font-size: 18px; cursor: pointer; transition: color 0.2s; }
+        .search-close:hover { color: white; }
+
+        .search-highlight { background: rgba(255,215,0,0.3); border-radius: 3px; padding: 0 2px; }
+
+        .bg-picker-btn { background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.12); color: white; width: 34px; height: 34px; border-radius: 10px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 16px; transition: all 0.3s ease; flex-shrink: 0; }
         .bg-picker-btn:hover { background: rgba(255,255,255,0.15); transform: scale(1.05); }
 
-        /* ===== BG PICKER DROPDOWN ===== */
-        .bg-picker-dropdown {
-          position: absolute;
-          top: 70px; right: 20px;
-          background: rgba(15,15,35,0.97);
-          border: 1px solid rgba(255,255,255,0.12);
-          border-radius: 16px; padding: 16px;
-          z-index: 999; min-width: 220px;
-          box-shadow: 0 20px 60px rgba(0,0,0,0.5);
-          animation: slideIn 0.2s ease;
-        }
-
-        .bg-picker-title {
-          font-size: 12px; font-weight: 700;
-          color: rgba(255,255,255,0.4);
-          text-transform: uppercase; letter-spacing: 1px;
-          margin-bottom: 12px;
-        }
-
-        .bg-options {
-          display: grid; grid-template-columns: 1fr 1fr;
-          gap: 8px;
-        }
-
-        .bg-option {
-          padding: 10px 12px; border-radius: 10px;
-          cursor: pointer; font-size: 12px; font-weight: 600;
-          color: white; border: 2px solid transparent;
-          transition: all 0.2s ease; text-align: center;
-        }
-
+        .bg-picker-dropdown { position: absolute; top: 70px; right: 20px; background: rgba(15,15,35,0.97); border: 1px solid rgba(255,255,255,0.12); border-radius: 16px; padding: 16px; z-index: 999; min-width: 220px; box-shadow: 0 20px 60px rgba(0,0,0,0.5); animation: slideIn 0.2s ease; }
+        .bg-picker-title { font-size: 12px; font-weight: 700; color: rgba(255,255,255,0.4); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 12px; }
+        .bg-options { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+        .bg-option { padding: 10px 12px; border-radius: 10px; cursor: pointer; font-size: 12px; font-weight: 600; color: white; border: 2px solid transparent; transition: all 0.2s ease; text-align: center; }
         .bg-option:hover { border-color: rgba(255,255,255,0.3); transform: scale(1.03); }
         .bg-option.active { border-color: #667eea; box-shadow: 0 0 12px rgba(102,126,234,0.4); }
 
         /* ===== MESSAGES ===== */
-        .messages-area {
-          flex: 1; overflow-y: auto;
-          padding: 24px 28px;
-          display: flex; flex-direction: column; gap: 14px;
-          scroll-behavior: smooth;
-        }
-
+        .messages-area { flex: 1; overflow-y: auto; padding: 24px 28px; display: flex; flex-direction: column; gap: 14px; scroll-behavior: smooth; }
         .messages-area::-webkit-scrollbar { width: 5px; }
         .messages-area::-webkit-scrollbar-track { background: transparent; }
         .messages-area::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 3px; }
         .messages-area::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.3); }
 
-        .date-separator {
-          display: flex; align-items: center; gap: 12px;
-          align-self: stretch; margin: 8px 0; animation: fadeIn 0.3s ease;
-        }
+        .date-separator { display: flex; align-items: center; gap: 12px; align-self: stretch; margin: 8px 0; animation: fadeIn 0.3s ease; }
         .date-separator-line { flex: 1; height: 1px; background: rgba(255,255,255,0.1); }
-        .date-separator-label {
-          font-size: 11px; font-weight: 600; color: rgba(255,255,255,0.35);
-          padding: 4px 12px; background: rgba(255,255,255,0.05);
-          border-radius: 20px; border: 1px solid rgba(255,255,255,0.08);
-          letter-spacing: 0.5px; white-space: nowrap;
-        }
+        .date-separator-label { font-size: 11px; font-weight: 600; color: rgba(255,255,255,0.35); padding: 4px 12px; background: rgba(255,255,255,0.05); border-radius: 20px; border: 1px solid rgba(255,255,255,0.08); letter-spacing: 0.5px; white-space: nowrap; }
 
-        .system-msg {
-          text-align: center; color: rgba(255,255,255,0.3); font-size: 12px;
-          padding: 5px 14px; background: rgba(255,255,255,0.04);
-          border-radius: 20px; align-self: center; animation: fadeIn 0.3s ease;
-        }
+        .system-msg { text-align: center; color: rgba(255,255,255,0.3); font-size: 12px; padding: 5px 14px; background: rgba(255,255,255,0.04); border-radius: 20px; align-self: center; animation: fadeIn 0.3s ease; }
 
-        .msg-row {
-          display: flex; gap: 10px; animation: fadeIn 0.3s ease;
-          max-width: 70%; position: relative; transition: transform 0.2s ease;
-        }
+        .msg-row { display: flex; gap: 10px; animation: fadeIn 0.3s ease; max-width: 70%; position: relative; transition: transform 0.2s ease; }
         .msg-row:hover { transform: translateY(-1px); }
         .msg-row.mine { align-self: flex-end; flex-direction: row-reverse; }
         .msg-row.theirs { align-self: flex-start; }
 
-        .msg-avatar {
-          width: 34px; height: 34px; border-radius: 50%;
-          background: linear-gradient(135deg, #f093fb, #f5576c);
-          display: flex; align-items: center; justify-content: center;
-          font-size: 13px; font-weight: 700; color: white;
-          flex-shrink: 0; align-self: flex-end; transition: transform 0.2s ease;
-        }
+        .msg-avatar { width: 34px; height: 34px; border-radius: 50%; background: linear-gradient(135deg, #f093fb, #f5576c); display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; color: white; flex-shrink: 0; align-self: flex-end; transition: transform 0.2s ease; }
         .msg-avatar:hover { transform: scale(1.15); }
         .msg-row.mine .msg-avatar { background: linear-gradient(135deg, #667eea, #764ba2); }
 
         .msg-content { display: flex; flex-direction: column; gap: 4px; position: relative; }
         .msg-row.mine .msg-content { align-items: flex-end; }
         .msg-row.theirs .msg-content { align-items: flex-start; }
-
         .msg-sender { font-size: 11px; color: rgba(255,255,255,0.4); padding: 0 4px; }
 
-        .msg-bubble {
-          padding: 11px 16px; border-radius: 18px;
-          font-size: 14px; line-height: 1.5;
-          word-break: break-word; max-width: 100%;
-          transition: box-shadow 0.2s ease;
-        }
-        .msg-row.mine .msg-bubble {
-          background: linear-gradient(135deg, #667eea, #764ba2);
-          color: white; border-bottom-right-radius: 4px;
-          box-shadow: 0 4px 15px rgba(102,126,234,0.3);
-        }
+        .msg-bubble { padding: 11px 16px; border-radius: 18px; font-size: 14px; line-height: 1.5; word-break: break-word; max-width: 100%; transition: box-shadow 0.2s ease; }
+        .msg-row.mine .msg-bubble { background: linear-gradient(135deg, #667eea, #764ba2); color: white; border-bottom-right-radius: 4px; box-shadow: 0 4px 15px rgba(102,126,234,0.3); }
         .msg-row.mine .msg-bubble:hover { box-shadow: 0 6px 20px rgba(102,126,234,0.5); }
-        .msg-row.theirs .msg-bubble {
-          background: rgba(255,255,255,0.09); color: rgba(255,255,255,0.9);
-          border: 1px solid rgba(255,255,255,0.08); border-bottom-left-radius: 4px;
-        }
+        .msg-row.theirs .msg-bubble { background: rgba(255,255,255,0.09); color: rgba(255,255,255,0.9); border: 1px solid rgba(255,255,255,0.08); border-bottom-left-radius: 4px; }
         .msg-row.theirs .msg-bubble:hover { background: rgba(255,255,255,0.12); }
 
         .msg-footer { display: flex; align-items: center; gap: 8px; padding: 0 4px; }
         .msg-time { font-size: 10px; color: rgba(255,255,255,0.3); }
         .edited-tag { font-size: 10px; color: rgba(255,255,255,0.3); font-style: italic; }
 
+        /* ===== SEEN STATUS ===== */
+        .seen-status { font-size: 11px; color: rgba(102,126,234,0.8); font-weight: 600; }
+        .seen-status.delivered { color: rgba(255,255,255,0.3); }
+
         .msg-actions { display: flex; gap: 6px; margin-top: 2px; opacity: 0; transition: opacity 0.2s; }
         .msg-row:hover .msg-actions { opacity: 1; }
 
-        .action-btn {
-          background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.15);
-          color: rgba(255,255,255,0.7); padding: 3px 10px; border-radius: 8px;
-          font-size: 11px; cursor: pointer; transition: all 0.2s; position: relative; overflow: hidden;
-        }
+        .action-btn { background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.15); color: rgba(255,255,255,0.7); padding: 3px 10px; border-radius: 8px; font-size: 11px; cursor: pointer; transition: all 0.2s; position: relative; overflow: hidden; }
         .action-btn:hover { background: rgba(255,255,255,0.2); color: white; transform: scale(1.05); }
         .action-btn.delete:hover { background: rgba(231,76,60,0.3); border-color: rgba(231,76,60,0.5); color: #e74c3c; }
 
         .reactions-bar { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
-        .reaction-btn {
-          background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.12);
-          border-radius: 20px; padding: 2px 8px; font-size: 13px; cursor: pointer;
-          transition: all 0.2s; color: white; display: flex; align-items: center; gap: 4px;
-        }
+        .reaction-btn { background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.12); border-radius: 20px; padding: 2px 8px; font-size: 13px; cursor: pointer; transition: all 0.2s; color: white; display: flex; align-items: center; gap: 4px; }
         .reaction-btn:hover { background: rgba(255,255,255,0.18); transform: scale(1.15); }
         .reaction-btn.reacted { background: rgba(102,126,234,0.25); border-color: rgba(102,126,234,0.5); }
         .reaction-count { font-size: 11px; color: rgba(255,255,255,0.7); }
 
-        .reaction-picker {
-          display: flex; gap: 4px; margin-top: 4px;
-          background: rgba(30,30,60,0.95); border: 1px solid rgba(255,255,255,0.1);
-          border-radius: 20px; padding: 4px 8px;
-        }
+        .reaction-picker { display: flex; gap: 4px; margin-top: 4px; background: rgba(30,30,60,0.95); border: 1px solid rgba(255,255,255,0.1); border-radius: 20px; padding: 4px 8px; }
         .reaction-pick-btn { background: none; border: none; font-size: 18px; cursor: pointer; transition: transform 0.2s; padding: 2px; }
         .reaction-pick-btn:hover { transform: scale(1.3); }
 
-        .edit-input {
-          background: rgba(255,255,255,0.1); border: 1.5px solid #667eea;
-          border-radius: 10px; color: white; font-size: 14px; padding: 8px 12px;
-          outline: none; width: 100%; min-width: 200px; transition: box-shadow 0.2s ease;
-        }
+        .edit-input { background: rgba(255,255,255,0.1); border: 1.5px solid #667eea; border-radius: 10px; color: white; font-size: 14px; padding: 8px 12px; outline: none; width: 100%; min-width: 200px; transition: box-shadow 0.2s ease; }
         .edit-input:focus { box-shadow: 0 0 0 3px rgba(102,126,234,0.2); }
-
         .edit-actions { display: flex; gap: 6px; margin-top: 4px; }
-        .save-btn {
-          background: linear-gradient(135deg, #667eea, #764ba2); border: none;
-          color: white; padding: 4px 12px; border-radius: 8px; font-size: 12px;
-          cursor: pointer; font-weight: 600; transition: all 0.2s; position: relative; overflow: hidden;
-        }
+        .save-btn { background: linear-gradient(135deg, #667eea, #764ba2); border: none; color: white; padding: 4px 12px; border-radius: 8px; font-size: 12px; cursor: pointer; font-weight: 600; transition: all 0.2s; position: relative; overflow: hidden; }
         .save-btn:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(102,126,234,0.4); }
-        .cancel-btn {
-          background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2);
-          color: rgba(255,255,255,0.7); padding: 4px 12px; border-radius: 8px;
-          font-size: 12px; cursor: pointer; transition: all 0.2s;
-        }
+        .cancel-btn { background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); color: rgba(255,255,255,0.7); padding: 4px 12px; border-radius: 8px; font-size: 12px; cursor: pointer; transition: all 0.2s; }
         .cancel-btn:hover { background: rgba(255,255,255,0.2); }
 
         .typing-indicator { display: flex; align-items: center; gap: 8px; padding: 8px 16px; align-self: flex-start; animation: fadeIn 0.3s ease; }
@@ -478,28 +388,48 @@ function Chat({ username, onLogout }) {
 
         .empty-chat { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; color: rgba(255,255,255,0.2); }
         .empty-icon { font-size: 72px; animation: float 3s ease-in-out infinite; filter: drop-shadow(0 0 20px rgba(102,126,234,0.4)); }
-        .empty-title { font-size: 22px; font-weight: 700; color: rgba(255,255,255,0.5); animation: fadeIn 0.6s ease; }
-        .empty-sub { font-size: 14px; color: rgba(255,255,255,0.25); animation: fadeIn 0.8s ease; }
-        .empty-hint { font-size: 12px; color: rgba(102,126,234,0.6); background: rgba(102,126,234,0.1); border: 1px solid rgba(102,126,234,0.2); padding: 8px 16px; border-radius: 20px; animation: fadeIn 1s ease, pulse 3s ease-in-out infinite; }
+        .empty-title { font-size: 22px; font-weight: 700; color: rgba(255,255,255,0.5); }
+        .empty-sub { font-size: 14px; color: rgba(255,255,255,0.25); }
+        .empty-hint { font-size: 12px; color: rgba(102,126,234,0.6); background: rgba(102,126,234,0.1); border: 1px solid rgba(102,126,234,0.2); padding: 8px 16px; border-radius: 20px; }
 
-        .input-area { padding: 16px 28px 20px; background: rgba(0,0,0,0.2); border-top: 1px solid rgba(255,255,255,0.07); }
-        .input-row {
-          display: flex; gap: 12px; align-items: center;
-          background: rgba(255,255,255,0.06); border: 1.5px solid rgba(255,255,255,0.1);
-          border-radius: 16px; padding: 6px 6px 6px 18px; transition: all 0.3s;
+        /* ===== INPUT AREA ===== */
+        .input-area { padding: 16px 28px 20px; background: rgba(0,0,0,0.2); border-top: 1px solid rgba(255,255,255,0.07); position: relative; }
+
+        /* ===== EMOJI PICKER ===== */
+        .emoji-picker-popup {
+          position: absolute; bottom: 80px; left: 28px;
+          background: rgba(15,15,35,0.98);
+          border: 1px solid rgba(255,255,255,0.12);
+          border-radius: 16px; padding: 16px;
+          z-index: 999; width: 320px;
+          box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+          animation: slideDown 0.2s ease;
         }
+
+        .emoji-picker-title { font-size: 12px; font-weight: 700; color: rgba(255,255,255,0.4); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 10px; }
+
+        .emoji-grid { display: grid; grid-template-columns: repeat(10, 1fr); gap: 4px; max-height: 200px; overflow-y: auto; }
+        .emoji-grid::-webkit-scrollbar { width: 4px; }
+        .emoji-grid::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 2px; }
+
+        .emoji-item { background: none; border: none; font-size: 20px; cursor: pointer; padding: 4px; border-radius: 6px; transition: all 0.15s ease; display: flex; align-items: center; justify-content: center; }
+        .emoji-item:hover { background: rgba(255,255,255,0.1); transform: scale(1.3); }
+
+        .emoji-btn { background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.12); color: white; width: 36px; height: 36px; border-radius: 10px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 18px; transition: all 0.2s; flex-shrink: 0; }
+        .emoji-btn:hover { background: rgba(255,255,255,0.15); transform: scale(1.05); }
+        .emoji-btn.active { background: rgba(102,126,234,0.3); border-color: #667eea; }
+
+        .input-row { display: flex; gap: 12px; align-items: center; background: rgba(255,255,255,0.06); border: 1.5px solid rgba(255,255,255,0.1); border-radius: 16px; padding: 6px 6px 6px 12px; transition: all 0.3s; }
         .input-row:focus-within { border-color: #667eea; background: rgba(102,126,234,0.08); box-shadow: 0 0 0 3px rgba(102,126,234,0.12); }
         .msg-input { flex: 1; background: transparent; border: none; color: white; font-size: 14px; outline: none; padding: 8px 0; }
         .msg-input::placeholder { color: rgba(255,255,255,0.3); }
 
-        .send-btn {
-          width: 42px; height: 42px; background: linear-gradient(135deg, #667eea, #764ba2);
-          border: none; border-radius: 12px; color: white; font-size: 18px; cursor: pointer;
-          display: flex; align-items: center; justify-content: center;
-          transition: all 0.2s; flex-shrink: 0; position: relative; overflow: hidden;
-        }
+        .send-btn { width: 42px; height: 42px; background: linear-gradient(135deg, #667eea, #764ba2); border: none; border-radius: 12px; color: white; font-size: 18px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s; flex-shrink: 0; position: relative; overflow: hidden; }
         .send-btn:hover { transform: scale(1.08); box-shadow: 0 4px 15px rgba(102,126,234,0.5); }
         .send-btn:active { transform: scale(0.95); }
+
+        /* ===== NO SEARCH RESULTS ===== */
+        .no-results { text-align: center; padding: 40px; color: rgba(255,255,255,0.3); font-size: 14px; }
 
         @media (max-width: 768px) {
           .chat-layout { flex-direction: column; }
@@ -517,6 +447,8 @@ function Chat({ username, onLogout }) {
           .msg-count { display: none; }
           .sidebar-toggle { display: none; }
           .bg-picker-dropdown { right: 10px; }
+          .emoji-picker-popup { width: 280px; left: 10px; }
+          .search-bar { padding: 10px 16px; }
         }
       `}</style>
 
@@ -536,7 +468,11 @@ function Chat({ username, onLogout }) {
               <div className="room-name"># general</div>
               <div className="room-sub">Everyone is here</div>
             </div>
-            <div className="online-dot"></div>
+            {unreadCount > 0 && !isTabFocused ? (
+              <div className="notif-badge">{unreadCount}</div>
+            ) : (
+              <div className="online-dot"></div>
+            )}
           </div>
           <div className="sidebar-spacer"></div>
           <div className="sidebar-user">
@@ -552,11 +488,9 @@ function Chat({ username, onLogout }) {
         {/* MAIN CHAT */}
         <div className="chat-main">
           <div className="chat-header">
-            {/* SIDEBAR TOGGLE */}
             <button className="sidebar-toggle ripple-btn" onClick={() => setSidebarOpen(!sidebarOpen)} title="Toggle Sidebar">
               {sidebarOpen ? '◀' : '▶'}
             </button>
-
             <div className="chat-header-avatar">🌐</div>
             <div className="chat-header-info">
               <div className="chat-header-name"># general</div>
@@ -567,23 +501,24 @@ function Chat({ username, onLogout }) {
             </div>
             <div className="msg-count">{messages.filter(m => m.type !== 'system').length} messages</div>
 
-            {/* BG PICKER BUTTON */}
+            {/* SEARCH BUTTON */}
+            <button className={`search-btn ripple-btn ${showSearch ? 'active' : ''}`} onClick={() => { setShowSearch(!showSearch); setSearchQuery(''); }} title="Search Messages">
+              🔍
+            </button>
+
+            {/* BG PICKER */}
             <button className="bg-picker-btn ripple-btn" onClick={() => setShowBgPicker(!showBgPicker)} title="Change Background">
               🎨
             </button>
 
-            {/* BG PICKER DROPDOWN */}
             {showBgPicker && (
               <div className="bg-picker-dropdown">
                 <div className="bg-picker-title">Chat Background</div>
                 <div className="bg-options">
                   {BACKGROUNDS.map(bg => (
-                    <div
-                      key={bg.id}
-                      className={`bg-option ${selectedBg.id === bg.id ? 'active' : ''}`}
-                      style={{ background: bg.value.includes('linear') ? bg.value : bg.value }}
-                      onClick={() => { setSelectedBg(bg); setShowBgPicker(false); }}
-                    >
+                    <div key={bg.id} className={`bg-option ${selectedBg.id === bg.id ? 'active' : ''}`}
+                      style={{ background: bg.value }}
+                      onClick={() => { setSelectedBg(bg); setShowBgPicker(false); }}>
                       {bg.label}
                     </div>
                   ))}
@@ -592,9 +527,32 @@ function Chat({ username, onLogout }) {
             )}
           </div>
 
+          {/* SEARCH BAR */}
+          {showSearch && (
+            <div className="search-bar">
+              <input
+                ref={searchInputRef}
+                className="search-input"
+                placeholder="Search messages..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
+              {searchQuery && (
+                <span className="search-results-count">
+                  {filteredMessages.filter(m => m.type !== 'system').length} results
+                </span>
+              )}
+              <button className="search-close" onClick={() => { setShowSearch(false); setSearchQuery(''); }}>✕</button>
+            </div>
+          )}
+
           {/* MESSAGES */}
           <div className="messages-area">
-            {messages.length === 0 ? (
+            {filteredMessages.length === 0 && searchQuery ? (
+              <div className="no-results">
+                🔍 No messages found for "<strong>{searchQuery}</strong>"
+              </div>
+            ) : filteredMessages.length === 0 ? (
               <div className="empty-chat">
                 <span className="empty-icon">💬</span>
                 <div className="empty-title">No messages yet</div>
@@ -602,14 +560,17 @@ function Chat({ username, onLogout }) {
                 <div className="empty-hint">✨ Send a message below to start the conversation</div>
               </div>
             ) : (
-              messages.map((msg, index) => {
+              filteredMessages.map((msg, index) => {
                 if (msg.type === 'system') {
                   return <div key={index} className="system-msg">— {msg.text} —</div>;
                 }
                 const isMine = msg.username === username;
                 const isEditing = editingId === msg._id;
                 const reactions = msg.reactions || {};
-                const showDate = shouldShowDateSeparator(messages, index);
+                const showDate = shouldShowDateSeparator(filteredMessages, index);
+                const userMsgs = messages.filter(m => m.type !== 'system');
+                const msgIndexInAll = userMsgs.findIndex(m => m._id === msg._id);
+                const isLastMine = isMine && msgIndexInAll === userMsgs.length - 1;
 
                 return (
                   <React.Fragment key={msg._id || index}>
@@ -634,10 +595,24 @@ function Chat({ username, onLogout }) {
                           </>
                         ) : (
                           <>
-                            <div className="msg-bubble">{msg.text}</div>
+                            <div className="msg-bubble">
+                              {searchQuery ? (
+                                msg.text?.split(new RegExp(`(${searchQuery})`, 'gi')).map((part, i) =>
+                                  part.toLowerCase() === searchQuery.toLowerCase()
+                                    ? <span key={i} className="search-highlight">{part}</span>
+                                    : part
+                                )
+                              ) : msg.text}
+                            </div>
                             <div className="msg-footer">
                               <span className="msg-time">{formatTime(msg.timestamp)}</span>
                               {msg.edited && <span className="edited-tag">(edited)</span>}
+                              {/* SEEN STATUS */}
+                              {isMine && (
+                                <span className={`seen-status ${isLastMine ? '' : 'delivered'}`}>
+                                  {isLastMine ? '✓✓' : '✓'}
+                                </span>
+                              )}
                             </div>
                             {Object.keys(reactions).length > 0 && (
                               <div className="reactions-bar">
@@ -686,8 +661,25 @@ function Chat({ username, onLogout }) {
             <div ref={messagesEndRef} />
           </div>
 
+          {/* INPUT AREA */}
           <div className="input-area">
+            {/* EMOJI PICKER POPUP */}
+            {showEmojiPicker && (
+              <div className="emoji-picker-popup">
+                <div className="emoji-picker-title">Pick an Emoji</div>
+                <div className="emoji-grid">
+                  {EMOJI_LIST.map((emoji, i) => (
+                    <button key={i} className="emoji-item" onClick={() => { setInput(prev => prev + emoji); setShowEmojiPicker(false); }}>
+                      {emoji}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
             <form className="input-row" onSubmit={sendMessage}>
+              <button type="button" className={`emoji-btn ${showEmojiPicker ? 'active' : ''}`} onClick={() => setShowEmojiPicker(!showEmojiPicker)} title="Emoji">
+                😊
+              </button>
               <input className="msg-input" type="text" placeholder="Message #general..." value={input} onChange={handleInputChange} />
               <button type="submit" className="send-btn ripple-btn">➤</button>
             </form>
