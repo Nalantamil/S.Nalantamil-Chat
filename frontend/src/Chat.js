@@ -149,14 +149,6 @@ function Chat({ username, onLogout }) {
     ? messages.filter(m => m.type !== 'system' && m.text?.toLowerCase().includes(searchQuery.toLowerCase()))
     : messages;
 
-  // ===== SEEN STATUS =====
-  const getSeenStatus = (msg, index) => {
-    if (msg.username !== username) return null;
-    const isLast = index === messages.filter(m => m.type !== 'system').length - 1;
-    if (isLast) return '✓✓';
-    return '✓';
-  };
-
   return (
     <>
       <style>{`
