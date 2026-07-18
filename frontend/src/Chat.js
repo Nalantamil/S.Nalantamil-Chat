@@ -43,6 +43,8 @@ function Chat({ username, onLogout }) {
   const [showSearch, setShowSearch] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
   const [isTabFocused, setIsTabFocused] = useState(true);
+  const [pinnedMessages, setPinnedMessages] = useState([]);
+  const [showPinned, setShowPinned] = useState(false);
   const messagesEndRef = useRef(null);
   const typingTimeoutRef = useRef(null);
   const searchInputRef = useRef(null);
@@ -81,6 +83,12 @@ function Chat({ username, onLogout }) {
     axios.get('https://s-nalantamil-chat.onrender.com/messages').then((res) => {
       setMessages(res.data);
     });
+
+    // Fetch pinned messages
+    axios.get('https://s-nalantamil-chat.onrender.com/pinned').then(res => {
+      setPinnedMessages(res.data);
+    });
+
     socket.emit('join', { username });
     socket.on('message', (msg) => {
       setMessages((prev) => [...prev, { ...msg, reactions: {} }]);
@@ -93,9 +101,20 @@ function Chat({ username, onLogout }) {
     socket.on('reaction_updated', ({ message_id, reactions }) => setMessages((prev) => prev.map((m) => m._id === message_id ? { ...m, reactions } : m)));
     socket.on('user_typing', ({ username: typingUser }) => setTypingUsers((prev) => prev.includes(typingUser) ? prev : [...prev, typingUser]));
     socket.on('user_stop_typing', ({ username: typingUser }) => setTypingUsers((prev) => prev.filter((u) => u !== typingUser)));
+
+    // Pin socket listeners
+    socket.on('message_pinned', (data) => {
+      setPinnedMessages(prev => [data, ...prev]);
+    });
+    socket.on('message_unpinned', ({ message_id }) => {
+      setPinnedMessages(prev => prev.filter(p => p.message_id !== message_id));
+    });
+
     return () => {
       socket.off('message'); socket.off('message_deleted'); socket.off('message_edited');
       socket.off('reaction_updated'); socket.off('user_typing'); socket.off('user_stop_typing');
+      socket.off('message_pinned');
+      socket.off('message_unpinned');
     };
   }, [username, isTabFocused]);
 
@@ -136,6 +155,25 @@ function Chat({ username, onLogout }) {
     setEditingId(null); setEditText('');
   };
   const addReaction = (message_id, emoji) => socket.emit('add_reaction', { message_id, emoji, username });
+
+  // ===== PIN / UNPIN =====
+  const pinMessage = async (msg) => {
+    const pinData = {
+      message_id: msg._id,
+      text: msg.text,
+      username: msg.username,
+      pinned_by: username
+    };
+    await axios.post('https://s-nalantamil-chat.onrender.com/pinned', pinData);
+    socket.emit('pin_message', pinData);
+  };
+
+  const unpinMessage = async (message_id) => {
+    await axios.delete(`https://s-nalantamil-chat.onrender.com/pinned/${message_id}`);
+    socket.emit('unpin_message', { message_id });
+  };
+
+  const isPinned = (msg_id) => pinnedMessages.some(p => p.message_id === msg_id);
 
   const formatTime = (timestamp) => {
     if (!timestamp) return '';
@@ -304,6 +342,51 @@ function Chat({ username, onLogout }) {
         .bg-option { padding: 10px 12px; border-radius: 10px; cursor: pointer; font-size: 12px; font-weight: 600; color: white; border: 2px solid transparent; transition: all 0.2s ease; text-align: center; }
         .bg-option:hover { border-color: rgba(255,255,255,0.3); transform: scale(1.03); }
         .bg-option.active { border-color: #667eea; box-shadow: 0 0 12px rgba(102,126,234,0.4); }
+
+        /* ===== PINNED MESSAGES ===== */
+        .pin-btn { background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.12); color: white; width: 34px; height: 34px; border-radius: 10px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 16px; transition: all 0.3s ease; flex-shrink: 0; }
+        .pin-btn:hover { background: rgba(255,255,255,0.15); transform: scale(1.05); }
+        .pin-btn.active { background: rgba(255,215,0,0.2); border-color: rgba(255,215,0,0.5); }
+
+        .pinned-panel {
+          position: absolute; top: 70px; left: 0; right: 0;
+          background: rgba(10,10,30,0.97);
+          border-bottom: 1px solid rgba(255,215,0,0.2);
+          padding: 16px 28px; z-index: 10;
+          animation: slideDown 0.2s ease;
+          max-height: 250px; overflow-y: auto;
+        }
+
+        .pinned-panel-title {
+          font-size: 12px; font-weight: 700;
+          color: rgba(255,215,0,0.7);
+          text-transform: uppercase; letter-spacing: 1px;
+          margin-bottom: 12px;
+          display: flex; align-items: center; gap: 8px;
+        }
+
+        .pinned-item {
+          display: flex; align-items: center; gap: 12px;
+          padding: 10px 14px; border-radius: 10px;
+          background: rgba(255,215,0,0.05);
+          border: 1px solid rgba(255,215,0,0.1);
+          margin-bottom: 8px; transition: all 0.2s ease;
+        }
+
+        .pinned-item:hover { background: rgba(255,215,0,0.1); border-color: rgba(255,215,0,0.2); }
+
+        .pinned-item-icon { font-size: 14px; flex-shrink: 0; }
+        .pinned-item-content { flex: 1; overflow: hidden; }
+        .pinned-item-text { font-size: 13px; color: rgba(255,255,255,0.8); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .pinned-item-meta { font-size: 10px; color: rgba(255,255,255,0.3); margin-top: 2px; }
+
+        .unpin-btn { background: none; border: none; color: rgba(255,255,255,0.3); font-size: 14px; cursor: pointer; transition: color 0.2s; flex-shrink: 0; }
+        .unpin-btn:hover { color: #e74c3c; }
+
+        .msg-pin-indicator { font-size: 11px; color: rgba(255,215,0,0.6); padding: 0 4px; }
+
+        .action-btn.pin { }
+        .action-btn.pin.pinned { color: rgba(255,215,0,0.8); }
 
         /* ===== MESSAGES ===== */
         .messages-area { flex: 1; overflow-y: auto; padding: 24px 28px; display: flex; flex-direction: column; gap: 14px; scroll-behavior: smooth; }
@@ -498,6 +581,15 @@ function Chat({ username, onLogout }) {
               🔍
             </button>
 
+            {/* PIN BUTTON */}
+            <button
+              className={`pin-btn ripple-btn ${showPinned ? 'active' : ''}`}
+              onClick={() => setShowPinned(!showPinned)}
+              title="Pinned Messages"
+            >
+              📌
+            </button>
+
             {/* BG PICKER */}
             <button className="bg-picker-btn ripple-btn" onClick={() => setShowBgPicker(!showBgPicker)} title="Change Background">
               🎨
@@ -535,6 +627,32 @@ function Chat({ username, onLogout }) {
                 </span>
               )}
               <button className="search-close" onClick={() => { setShowSearch(false); setSearchQuery(''); }}>✕</button>
+            </div>
+          )}
+
+          {/* PINNED PANEL */}
+          {showPinned && (
+            <div className="pinned-panel">
+              <div className="pinned-panel-title">
+                📌 Pinned Messages
+                {pinnedMessages.length > 0 && ` (${pinnedMessages.length})`}
+              </div>
+              {pinnedMessages.length === 0 ? (
+                <div style={{color: 'rgba(255,255,255,0.3)', fontSize: '13px'}}>
+                  No pinned messages yet. Hover a message and click 📌 to pin it!
+                </div>
+              ) : (
+                pinnedMessages.map((p, i) => (
+                  <div key={i} className="pinned-item">
+                    <span className="pinned-item-icon">📌</span>
+                    <div className="pinned-item-content">
+                      <div className="pinned-item-text">{p.text}</div>
+                      <div className="pinned-item-meta">by {p.username} • pinned by {p.pinned_by}</div>
+                    </div>
+                    <button className="unpin-btn" onClick={() => unpinMessage(p.message_id)}>✕</button>
+                  </div>
+                ))
+              )}
             </div>
           )}
 
@@ -605,6 +723,7 @@ function Chat({ username, onLogout }) {
                                   {isLastMine ? '✓✓' : '✓'}
                                 </span>
                               )}
+                              {isPinned(msg._id) && <span className="msg-pin-indicator">📌</span>}
                             </div>
                             {Object.keys(reactions).length > 0 && (
                               <div className="reactions-bar">
@@ -623,6 +742,13 @@ function Chat({ username, onLogout }) {
                                   <button key={emoji} className="reaction-pick-btn" onClick={() => addReaction(msg._id, emoji)}>{emoji}</button>
                                 ))}
                               </div>
+                              <button
+                                className={`action-btn pin ripple-btn ${isPinned(msg._id) ? 'pinned' : ''}`}
+                                onClick={() => isPinned(msg._id) ? unpinMessage(msg._id) : pinMessage(msg)}
+                                title={isPinned(msg._id) ? 'Unpin' : 'Pin'}
+                              >
+                                {isPinned(msg._id) ? '📌' : '📍'}
+                              </button>
                               {isMine && (
                                 <>
                                   <button className="action-btn ripple-btn" onClick={() => startEdit(msg)}>✏️</button>

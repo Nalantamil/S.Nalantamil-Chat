@@ -12,20 +12,19 @@ import time
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'your-secret-key-change-later'
 CORS(app, resources={r"/*": {"origins": "*"}})
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading', ping_timeout=60, ping_interval=25)
 
-# Connect to MongoDB
 import os
 client = MongoClient(os.environ.get("MONGODB_URI", "mongodb+srv://tamilsundhar:Nalan1234@cluster0.pse786b.mongodb.net/chatapp"))
 db = client["chatapp"]
 users_collection = db["users"]
 messages_collection = db["messages"]
+pinned_collection = db["pinned"]
 
 @app.route('/')
 def home():
     return "Backend is running!"
 
-# ---------- SIGNUP ----------
 @app.route('/signup', methods=['POST'])
 def signup():
     data = request.json
@@ -40,7 +39,6 @@ def signup():
     users_collection.insert_one({"username": username, "password": hashed_pw})
     return jsonify({"message": "Signup successful"}), 201
 
-# ---------- LOGIN ----------
 @app.route('/login', methods=['POST'])
 def login():
     data = request.json
@@ -57,7 +55,6 @@ def login():
     }, app.config['SECRET_KEY'], algorithm="HS256")
     return jsonify({"message": "Login successful", "token": token}), 200
 
-# ---------- GET MESSAGES ----------
 @app.route('/messages', methods=['GET'])
 def get_messages():
     msgs = list(messages_collection.find().sort('timestamp', 1).limit(50))
@@ -65,14 +62,12 @@ def get_messages():
         msg['_id'] = str(msg['_id'])
     return jsonify(msgs), 200
 
-# ---------- DELETE MESSAGE ----------
 @app.route('/messages/<message_id>', methods=['DELETE'])
 def delete_message(message_id):
     from bson.objectid import ObjectId
     messages_collection.delete_one({"_id": ObjectId(message_id)})
     return jsonify({"message": "Deleted"}), 200
 
-# ---------- EDIT MESSAGE ----------
 @app.route('/messages/<message_id>', methods=['PUT'])
 def edit_message(message_id):
     from bson.objectid import ObjectId
@@ -82,6 +77,31 @@ def edit_message(message_id):
         {"$set": {"text": data['text'], "edited": True}}
     )
     return jsonify({"message": "Updated"}), 200
+
+# ---------- PINNED MESSAGES ----------
+@app.route('/pinned', methods=['GET'])
+def get_pinned():
+    pinned = list(pinned_collection.find().sort('pinned_at', -1))
+    for p in pinned:
+        p['_id'] = str(p['_id'])
+    return jsonify(pinned), 200
+
+@app.route('/pinned', methods=['POST'])
+def pin_message():
+    data = request.json
+    pinned_collection.insert_one({
+        'message_id': data['message_id'],
+        'text': data['text'],
+        'username': data['username'],
+        'pinned_by': data['pinned_by'],
+        'pinned_at': str(datetime.datetime.utcnow())
+    })
+    return jsonify({"message": "Pinned"}), 201
+
+@app.route('/pinned/<message_id>', methods=['DELETE'])
+def unpin_message(message_id):
+    pinned_collection.delete_one({"message_id": message_id})
+    return jsonify({"message": "Unpinned"}), 200
 
 # ---------- SOCKET.IO ----------
 online_users = []
@@ -155,33 +175,36 @@ def handle_reaction(data):
     message_id = data['message_id']
     emoji = data['emoji']
     user = data['username']
-    
     msg = messages_collection.find_one({"_id": ObjectId(message_id)})
     if not msg:
         return
-    
     reactions = msg.get('reactions', {})
     if emoji not in reactions:
         reactions[emoji] = []
-    
     if user in reactions[emoji]:
         reactions[emoji].remove(user)
     else:
         reactions[emoji].append(user)
-    
     messages_collection.update_one(
         {"_id": ObjectId(message_id)},
         {"$set": {"reactions": reactions}}
     )
-    
     emit('reaction_updated', {
         'message_id': message_id,
         'reactions': reactions
     }, broadcast=True)
 
+@socketio.on('pin_message')
+def handle_pin(data):
+    emit('message_pinned', data, broadcast=True)
+
+@socketio.on('unpin_message')
+def handle_unpin(data):
+    emit('message_unpinned', data, broadcast=True)
+
 def keep_alive():
     while True:
-        time.sleep(600)  # every 10 minutes
+        time.sleep(600)
         try:
             requests.get('https://s-nalantamil-chat.onrender.com/')
         except:
