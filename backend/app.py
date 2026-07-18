@@ -91,12 +91,12 @@ def handle_join(data):
     username = data['username']
     if username not in online_users:
         online_users.append(username)
+        emit('message', {
+            'type': 'system',
+            'text': f'{username} joined the chat 👋',
+            'timestamp': str(datetime.datetime.utcnow())
+        }, broadcast=True)
     emit('online_users', online_users, broadcast=True)
-    emit('message', {
-        'type': 'system',
-        'text': f'{username} joined the chat 👋',
-        'timestamp': str(datetime.datetime.utcnow())
-    }, broadcast=True)
 
 @socketio.on('send_message')
 def handle_message(data):
