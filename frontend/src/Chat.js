@@ -199,8 +199,15 @@ function Chat({ username, onLogout }) {
     setUploading(true);
     try {
       const url = await uploadToCloudinary(imageFile);
+      const caption = input.trim();
       socket.emit('send_message', { username, text: `__IMAGE__${url}` });
+      if (caption) {
+        setTimeout(() => {
+          socket.emit('send_message', { username, text: caption });
+        }, 500);
+      }
       cancelImage();
+      setInput('');
     } catch (err) {
       console.error('Upload failed:', err);
     }
@@ -215,6 +222,19 @@ function Chat({ username, onLogout }) {
     setIsDragging(false);
     const file = e.dataTransfer.files[0];
     handleImageSelect(file);
+  };
+
+  // ===== CLIPBOARD PASTE =====
+  const handlePaste = (e) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].type.startsWith('image/')) {
+        const file = items[i].getAsFile();
+        handleImageSelect(file);
+        break;
+      }
+    }
   };
 
   // ===== PIN / UNPIN =====
@@ -675,6 +695,7 @@ function Chat({ username, onLogout }) {
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
+          onPaste={handlePaste}
         >
           <div className="chat-header">
             <button className="sidebar-toggle ripple-btn" onClick={() => setSidebarOpen(!sidebarOpen)} title="Toggle Sidebar">
@@ -943,7 +964,7 @@ function Chat({ username, onLogout }) {
                 style={{ display: 'none' }}
                 onChange={handleFileInput}
               />
-              <input className="msg-input" type="text" placeholder={imageFile ? 'Click ➤ to send image...' : 'Message #general...'} value={input} onChange={handleInputChange} disabled={!!imageFile} />
+              <input className="msg-input" type="text" placeholder={imageFile ? 'Add a caption... (optional)' : 'Message #general...'} value={input} onChange={handleInputChange} />
               <button type="submit" className="send-btn ripple-btn" disabled={uploading}>
                 {uploading ? '⏳' : '➤'}
               </button>
