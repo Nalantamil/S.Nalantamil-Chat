@@ -45,9 +45,14 @@ function Chat({ username, onLogout }) {
   const [isTabFocused, setIsTabFocused] = useState(true);
   const [pinnedMessages, setPinnedMessages] = useState([]);
   const [showPinned, setShowPinned] = useState(false);
+  const [imagePreview, setImagePreview] = useState(null);
+  const [imageFile, setImageFile] = useState(null);
+  const [uploading, setUploading] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
   const messagesEndRef = useRef(null);
   const typingTimeoutRef = useRef(null);
   const searchInputRef = useRef(null);
+  const fileInputRef = useRef(null);
 
   const REACTIONS = ['👍', '❤️', '😂', '😮', '😢'];
 
@@ -139,6 +144,7 @@ function Chat({ username, onLogout }) {
 
   const sendMessage = (e) => {
     e.preventDefault();
+    if (imageFile) { sendImageMessage(); return; }
     if (!input.trim()) return;
     socket.emit('send_message', { username, text: input });
     socket.emit('stop_typing', { username });
@@ -155,6 +161,61 @@ function Chat({ username, onLogout }) {
     setEditingId(null); setEditText('');
   };
   const addReaction = (message_id, emoji) => socket.emit('add_reaction', { message_id, emoji, username });
+
+  // ===== IMAGE UPLOAD =====
+  const uploadToCloudinary = async (file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('upload_preset', 'chat_app_uploads');
+    formData.append('cloud_name', 'r2mj3pjl');
+    const res = await fetch('https://api.cloudinary.com/v1_1/r2mj3pjl/image/upload', {
+      method: 'POST',
+      body: formData
+    });
+    const data = await res.json();
+    return data.secure_url;
+  };
+
+  const handleImageSelect = (file) => {
+    if (!file || !file.type.startsWith('image/')) return;
+    setImageFile(file);
+    const reader = new FileReader();
+    reader.onload = (e) => setImagePreview(e.target.result);
+    reader.readAsDataURL(file);
+  };
+
+  const handleFileInput = (e) => {
+    handleImageSelect(e.target.files[0]);
+  };
+
+  const cancelImage = () => {
+    setImagePreview(null);
+    setImageFile(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const sendImageMessage = async () => {
+    if (!imageFile) return;
+    setUploading(true);
+    try {
+      const url = await uploadToCloudinary(imageFile);
+      socket.emit('send_message', { username, text: `__IMAGE__${url}` });
+      cancelImage();
+    } catch (err) {
+      console.error('Upload failed:', err);
+    }
+    setUploading(false);
+  };
+
+  // ===== DRAG & DROP =====
+  const handleDragOver = (e) => { e.preventDefault(); setIsDragging(true); };
+  const handleDragLeave = () => setIsDragging(false);
+  const handleDrop = (e) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const file = e.dataTransfer.files[0];
+    handleImageSelect(file);
+  };
 
   // ===== PIN / UNPIN =====
   const pinMessage = async (msg) => {
@@ -525,9 +586,58 @@ function Chat({ username, onLogout }) {
           .emoji-picker-popup { width: 280px; left: 10px; }
           .search-bar { padding: 10px 16px; }
         }
+
+        /* ===== IMAGE UPLOAD ===== */
+        .img-upload-btn { background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.12); color: white; width: 36px; height: 36px; border-radius: 10px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 18px; transition: all 0.2s; flex-shrink: 0; }
+        .img-upload-btn:hover { background: rgba(255,255,255,0.15); transform: scale(1.05); }
+
+        .image-preview-bar {
+          padding: 10px 12px; background: rgba(102,126,234,0.1);
+          border: 1px solid rgba(102,126,234,0.2);
+          border-radius: 12px; margin-bottom: 10px;
+          display: flex; align-items: center; gap: 12px;
+          animation: slideDown 0.2s ease;
+        }
+
+        .preview-img { width: 60px; height: 60px; object-fit: cover; border-radius: 8px; border: 2px solid rgba(102,126,234,0.4); }
+        .preview-info { flex: 1; }
+        .preview-name { font-size: 12px; color: rgba(255,255,255,0.7); font-weight: 600; }
+        .preview-size { font-size: 10px; color: rgba(255,255,255,0.3); margin-top: 2px; }
+        .preview-cancel { background: none; border: none; color: rgba(255,255,255,0.4); font-size: 18px; cursor: pointer; transition: color 0.2s; }
+        .preview-cancel:hover { color: #e74c3c; }
+
+        .upload-progress { font-size: 11px; color: rgba(102,126,234,0.8); animation: pulse 1s ease-in-out infinite; }
+
+        /* ===== DRAG & DROP ===== */
+        .drag-overlay {
+          position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+          background: rgba(102,126,234,0.2);
+          border: 3px dashed #667eea;
+          z-index: 9999; display: flex;
+          align-items: center; justify-content: center;
+          flex-direction: column; gap: 16px;
+          backdrop-filter: blur(4px);
+          animation: fadeIn 0.2s ease;
+        }
+
+        .drag-overlay-icon { font-size: 64px; }
+        .drag-overlay-text { font-size: 24px; font-weight: 700; color: white; }
+        .drag-overlay-sub { font-size: 14px; color: rgba(255,255,255,0.6); }
+
+        /* ===== IMAGE IN CHAT ===== */
+        .msg-image { max-width: 280px; max-height: 200px; border-radius: 12px; cursor: pointer; transition: transform 0.2s ease; display: block; }
+        .msg-image:hover { transform: scale(1.02); }
       `}</style>
 
       <div className="chat-layout">
+        {/* DRAG & DROP OVERLAY */}
+        {isDragging && (
+          <div className="drag-overlay">
+            <span className="drag-overlay-icon">📸</span>
+            <div className="drag-overlay-text">Drop image to send</div>
+            <div className="drag-overlay-sub">Supports JPG, PNG, GIF, WebP</div>
+          </div>
+        )}
         {/* SIDEBAR */}
         <div className="sidebar">
           <div className="sidebar-logo">
@@ -561,7 +671,11 @@ function Chat({ username, onLogout }) {
         </div>
 
         {/* MAIN CHAT */}
-        <div className="chat-main">
+        <div className="chat-main"
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+        >
           <div className="chat-header">
             <button className="sidebar-toggle ripple-btn" onClick={() => setSidebarOpen(!sidebarOpen)} title="Toggle Sidebar">
               {sidebarOpen ? '◀' : '▶'}
@@ -706,7 +820,14 @@ function Chat({ username, onLogout }) {
                         ) : (
                           <>
                             <div className="msg-bubble">
-                              {searchQuery ? (
+                              {msg.text?.startsWith('__IMAGE__') ? (
+                                <img
+                                  src={msg.text.replace('__IMAGE__', '')}
+                                  alt="sent image"
+                                  className="msg-image"
+                                  onClick={() => window.open(msg.text.replace('__IMAGE__', ''), '_blank')}
+                                />
+                              ) : searchQuery ? (
                                 msg.text?.split(new RegExp(`(${searchQuery})`, 'gi')).map((part, i) =>
                                   part.toLowerCase() === searchQuery.toLowerCase()
                                     ? <span key={i} className="search-highlight">{part}</span>
@@ -781,6 +902,19 @@ function Chat({ username, onLogout }) {
 
           {/* INPUT AREA */}
           <div className="input-area">
+            {/* IMAGE PREVIEW */}
+            {imagePreview && (
+              <div className="image-preview-bar">
+                <img src={imagePreview} alt="preview" className="preview-img" />
+                <div className="preview-info">
+                  <div className="preview-name">{imageFile?.name}</div>
+                  <div className="preview-size">{(imageFile?.size / 1024).toFixed(1)} KB</div>
+                  {uploading && <div className="upload-progress">⏳ Uploading...</div>}
+                </div>
+                <button className="preview-cancel" onClick={cancelImage}>✕</button>
+              </div>
+            )}
+
             {/* EMOJI PICKER POPUP */}
             {showEmojiPicker && (
               <div className="emoji-picker-popup">
@@ -798,8 +932,21 @@ function Chat({ username, onLogout }) {
               <button type="button" className={`emoji-btn ${showEmojiPicker ? 'active' : ''}`} onClick={() => setShowEmojiPicker(!showEmojiPicker)} title="Emoji">
                 😊
               </button>
-              <input className="msg-input" type="text" placeholder="Message #general..." value={input} onChange={handleInputChange} />
-              <button type="submit" className="send-btn ripple-btn">➤</button>
+              {/* IMAGE UPLOAD BUTTON */}
+              <button type="button" className="img-upload-btn" onClick={() => fileInputRef.current?.click()} title="Send Image">
+                📷
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                style={{ display: 'none' }}
+                onChange={handleFileInput}
+              />
+              <input className="msg-input" type="text" placeholder={imageFile ? 'Click ➤ to send image...' : 'Message #general...'} value={input} onChange={handleInputChange} disabled={!!imageFile} />
+              <button type="submit" className="send-btn ripple-btn" disabled={uploading}>
+                {uploading ? '⏳' : '➤'}
+              </button>
             </form>
           </div>
         </div>
