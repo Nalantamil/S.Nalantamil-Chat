@@ -823,7 +823,7 @@ function Chat({ username, onLogout }) {
                               {msg.text?.startsWith('__IMAGE__') ? (
                                 <img
                                   src={msg.text.replace('__IMAGE__', '')}
-                                  alt="photo"
+                                  alt=""
                                   className="msg-image"
                                   onClick={() => window.open(msg.text.replace('__IMAGE__', ''), '_blank')}
                                 />
