@@ -15,7 +15,7 @@ CORS(app, resources={r"/*": {"origins": "*"}})
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading', ping_timeout=60, ping_interval=25)
 
 import os
-client = MongoClient(os.environ.get("MONGODB_URI", "mongodb+srv://tamilsundhar:Nalan1234@cluster0.pse786b.mongodb.net/chatapp"))
+client = MongoClient(os.environ.get("MONGODB_URI", "mongodb+srv://tamilsundhar:NalantamilMDB31@cluster0.pse786b.mongodb.net/chatapp"))
 db = client["chatapp"]
 users_collection = db["users"]
 messages_collection = db["messages"]
@@ -77,6 +77,43 @@ def edit_message(message_id):
         {"$set": {"text": data['text'], "edited": True}}
     )
     return jsonify({"message": "Updated"}), 200
+
+# ---------- PROFILE ----------
+@app.route('/profile/<username>', methods=['GET', 'OPTIONS'])
+def get_profile(username):
+    if request.method == 'OPTIONS':
+        return '', 200
+    user = users_collection.find_one({"username": username})
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+    return jsonify({
+        "username": user['username'],
+        "bio": user.get('bio', ''),
+        "avatar_color": user.get('avatar_color', '#667eea'),
+        "avatar_url": user.get('avatar_url', '')
+    }), 200
+
+@app.route('/profile/<username>', methods=['PUT', 'OPTIONS'])
+def update_profile(username):
+    if request.method == 'OPTIONS':
+        return '', 200
+    data = request.json
+    update_data = {}
+    if 'bio' in data:
+        update_data['bio'] = data['bio']
+    if 'avatar_color' in data:
+        update_data['avatar_color'] = data['avatar_color']
+    if 'avatar_url' in data:
+        update_data['avatar_url'] = data['avatar_url']
+    if 'new_password' in data and data['new_password']:
+        current_password = data.get('current_password', '')
+        user = users_collection.find_one({"username": username})
+        if not bcrypt.checkpw(current_password.encode('utf-8'), user['password']):
+            return jsonify({"error": "Current password is incorrect"}), 401
+        update_data['password'] = bcrypt.hashpw(data['new_password'].encode('utf-8'), bcrypt.gensalt())
+    if update_data:
+        users_collection.update_one({"username": username}, {"$set": update_data})
+    return jsonify({"message": "Profile updated"}), 200
 
 # ---------- PINNED MESSAGES ----------
 @app.route('/pinned', methods=['GET'])
