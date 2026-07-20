@@ -162,7 +162,8 @@ def handle_message(data):
         'text': data['text'],
         'type': 'user',
         'timestamp': str(datetime.datetime.utcnow()),
-        'edited': False
+        'edited': False,
+        'reply_to': data.get('reply_to', None)
     }
     result = messages_collection.insert_one(message)
     message['_id'] = str(result.inserted_id)

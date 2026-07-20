@@ -62,6 +62,8 @@ function Chat({ username, onLogout }) {
   const searchInputRef = useRef(null);
   const fileInputRef = useRef(null);
 
+  const [replyingTo, setReplyingTo] = useState(null);
+
   const REACTIONS = ['👍', '❤️', '😂', '😮', '😢'];
 
   // ===== TAB FOCUS =====
@@ -158,11 +160,20 @@ function Chat({ username, onLogout }) {
     e.preventDefault();
     if (imageFile) { sendImageMessage(); return; }
     if (!input.trim()) return;
-    socket.emit('send_message', { username, text: input });
+    socket.emit('send_message', { 
+      username, 
+      text: input,
+      reply_to: replyingTo ? {
+        _id: replyingTo._id,
+        username: replyingTo.username,
+        text: replyingTo.text
+      } : null
+    });
     socket.emit('stop_typing', { username });
     clearTimeout(typingTimeoutRef.current);
     setInput('');
     setShowEmojiPicker(false);
+    setReplyingTo(null);
   };
 
   const deleteMessage = (message_id) => socket.emit('delete_message', { message_id });
@@ -221,8 +232,14 @@ function Chat({ username, onLogout }) {
       const caption = input.trim();
       socket.emit('send_message', { 
         username, 
-        text: `__IMAGE__${url}${caption ? `__CAPTION__${caption}` : ''}` 
+        text: `__IMAGE__${url}${caption ? `__CAPTION__${caption}` : ''}`,
+        reply_to: replyingTo ? {
+          _id: replyingTo._id,
+          username: replyingTo.username,
+          text: replyingTo.text
+        } : null
       });
+      setReplyingTo(null);
       cancelImage();
       setInput('');
     } catch (err) { console.error('Upload failed:', err); }
@@ -677,6 +694,40 @@ function Chat({ username, onLogout }) {
         .header-btn { width: 26px !important; height: 26px !important; font-size: 12px !important; }
         .msg-row { max-width: 90% !important; }
       }
+
+      /* ===== REPLY ===== */
+        .reply-bar {
+          padding: 8px 12px; 
+          background: rgba(102,126,234,0.1);
+          border-left: 3px solid #667eea;
+          border-radius: 8px;
+          margin-bottom: 8px;
+          display: flex; align-items: center; gap: 10px;
+          animation: slideDown 0.2s ease;
+        }
+
+        .reply-bar-content { flex: 1; overflow: hidden; }
+        .reply-bar-name { font-size: 11px; font-weight: 700; color: #667eea; margin-bottom: 2px; }
+        .reply-bar-text { font-size: 12px; color: rgba(255,255,255,0.5); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .reply-bar-cancel { background: none; border: none; color: rgba(255,255,255,0.4); font-size: 18px; cursor: pointer; }
+        .reply-bar-cancel:hover { color: white; }
+
+        .msg-reply-preview {
+          background: rgba(255,255,255,0.07);
+          border-left: 3px solid rgba(102,126,234,0.6);
+          border-radius: 6px;
+          padding: 6px 10px;
+          margin-bottom: 6px;
+          cursor: pointer;
+          transition: background 0.2s ease;
+        }
+
+        .msg-reply-preview:hover { background: rgba(255,255,255,0.12); }
+        .msg-reply-name { font-size: 11px; font-weight: 700; color: #667eea; margin-bottom: 2px; }
+        .msg-reply-text { font-size: 12px; color: rgba(255,255,255,0.5); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+        .msg-row.mine .msg-reply-preview { border-left-color: rgba(255,255,255,0.4); }
+        .msg-row.mine .msg-reply-name { color: rgba(255,255,255,0.8); }
       `}</style>
 
       {/* DRAG OVERLAY */}
@@ -914,7 +965,16 @@ function Chat({ username, onLogout }) {
                         ) : (
                           <>
                             <div className="msg-bubble">
-                              {msg.text?.startsWith('__IMAGE__') ? (
+                                {/* REPLY PREVIEW */}
+                                {msg.reply_to && (
+                                  <div className="msg-reply-preview">
+                                    <div className="msg-reply-name">↩️ {msg.reply_to.username}</div>
+                                    <div className="msg-reply-text">
+                                      {msg.reply_to.text?.startsWith('__IMAGE__') ? '🖼️ Image' : msg.reply_to.text}
+                                    </div>
+                                  </div>
+                                )}
+                                {msg.text?.startsWith('__IMAGE__') ? (
                                   (() => {
                                     const parts = msg.text.replace('__IMAGE__', '').split('__CAPTION__');
                                     const imgUrl = parts[0];
@@ -958,6 +1018,10 @@ function Chat({ username, onLogout }) {
                                   <button key={emoji} className="reaction-pick-btn" onClick={() => addReaction(msg._id, emoji)}>{emoji}</button>
                                 ))}
                               </div>
+                              <button className="action-btn" onClick={() => {
+                                setReplyingTo(msg);
+                                document.querySelector('.msg-input')?.focus();
+                              }}>↩️</button>
                               {isMine && (
                                 <>
                                   <button className="action-btn" onClick={() => startEdit(msg)}>✏️</button>
@@ -994,6 +1058,18 @@ function Chat({ username, onLogout }) {
 
           {/* INPUT AREA */}
           <div className="input-area">
+           {/* REPLY BAR */}
+              {replyingTo && (
+                <div className="reply-bar">
+                  <div className="reply-bar-content">
+                    <div className="reply-bar-name">↩️ Replying to {replyingTo.username}</div>
+                    <div className="reply-bar-text">
+                      {replyingTo.text?.startsWith('__IMAGE__') ? '🖼️ Image' : replyingTo.text}
+                    </div>
+                  </div>
+                  <button className="reply-bar-cancel" onClick={() => setReplyingTo(null)}>✕</button>
+                </div>
+              )}
             {imagePreview && (
               <div className="image-preview-bar">
                 <img src={imagePreview} alt="" className="preview-img" />
