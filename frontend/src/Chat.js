@@ -130,7 +130,18 @@ function Chat({ username, onLogout }) {
   useEffect(() => {
     if (showSearch && searchInputRef.current) searchInputRef.current.focus();
   }, [showSearch]);
-
+  
+  useEffect(() => {
+    if (showProfile) {
+      setProfileEdit({
+        bio: profile.bio || '',
+        avatar_color: profile.avatar_color || '#667eea',
+        avatar_url: profile.avatar_url || '',
+        current_password: '',
+        new_password: ''
+      });
+    }
+  }, [showProfile]);
   // ===== MESSAGE HANDLERS =====
   const handleInputChange = (e) => {
     setInput(e.target.value);
@@ -239,6 +250,10 @@ function Chat({ username, onLogout }) {
     try {
       await axios.put(`https://s-nalantamil-chat.onrender.com/profile/${username}`, profileEdit);
       setProfile(prev => ({ ...prev, ...profileEdit }));
+      // Refresh profile from server to confirm save
+      const res = await axios.get(`https://s-nalantamil-chat.onrender.com/profile/${username}`);
+      setProfile(res.data);
+      setProfileEdit(prev => ({ ...prev, ...res.data, current_password: '', new_password: '' }));
       setProfileMsg('✅ Profile updated successfully!');
       setTimeout(() => setProfileMsg(''), 3000);
     } catch (err) {
