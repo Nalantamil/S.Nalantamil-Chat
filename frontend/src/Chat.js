@@ -1038,7 +1038,10 @@ function Chat({ username, onLogout }) {
                                       const caption = iconAndCaption.split('__CAPTION__')[1];
                                       return (
                                         <div>
-                                          <div className="file-msg" onClick={() => window.open(urlPart, '_blank')}>
+                                          <div className="file-msg" onClick={() => {
+                                              const downloadUrl = urlPart.replace('/raw/upload/', '/raw/upload/fl_attachment/');
+                                              window.open(downloadUrl, '_blank');
+                                            }}>
                                             <span className="file-msg-icon">{icon || '📎'}</span>
                                             <div className="file-msg-info">
                                               <div className="file-msg-name">{filenamePart}</div>
