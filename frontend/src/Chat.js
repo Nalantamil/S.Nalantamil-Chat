@@ -208,8 +208,10 @@ function Chat({ username, onLogout }) {
     try {
       const url = await uploadToCloudinary(imageFile);
       const caption = input.trim();
-      socket.emit('send_message', { username, text: `__IMAGE__${url}` });
-      if (caption) setTimeout(() => socket.emit('send_message', { username, text: caption }), 500);
+      socket.emit('send_message', { 
+        username, 
+        text: `__IMAGE__${url}${caption ? `__CAPTION__${caption}` : ''}` 
+      });
       cancelImage();
       setInput('');
     } catch (err) { console.error('Upload failed:', err); }
@@ -546,25 +548,120 @@ function Chat({ username, onLogout }) {
         .profile-msg { text-align: center; font-size: 13px; margin-top: 12px; color: rgba(255,255,255,0.7); }
 
         @media (max-width: 768px) {
-          .chat-layout { flex-direction: column; }
-          .sidebar { width: 100% !important; min-width: 100% !important; height: auto; opacity: 1 !important; border-right: none; border-bottom: 1px solid rgba(255,255,255,0.07); flex-direction: row; align-items: center; padding: 10px 16px; gap: 12px; }
-          .sidebar-logo { padding: 0; border-bottom: none; }
-          .sidebar-section-title { display: none; }
-          .room-item { display: none; }
-          .sidebar-spacer { display: none; }
-          .sidebar-user { border-top: none; padding: 0; flex: 1; justify-content: flex-end; }
-          .chat-main { flex: 1; height: calc(100vh - 70px); }
-          .chat-header { padding: 12px 16px; }
-          .messages-area { padding: 16px; }
-          .msg-row { max-width: 90%; }
-          .input-area { padding: 12px 16px 16px; }
-          .msg-count { display: none; }
-          .sidebar-toggle { display: none; }
-          .bg-picker-dropdown { right: 10px; }
-          .emoji-picker-popup { width: 280px; left: 10px; }
-          .search-bar { padding: 10px 16px; }
-          .profile-modal { width: 95vw; padding: 20px; }
+        .chat-layout { flex-direction: column; }
+
+        /* SIDEBAR → TOP NAV ON MOBILE */
+        .sidebar {
+          width: 100% !important;
+          min-width: 100% !important;
+          height: auto !important;
+          opacity: 1 !important;
+          border-right: none;
+          border-bottom: 1px solid rgba(255,255,255,0.07);
+          flex-direction: column !important;
+          padding: 0 !important;
+          overflow: visible !important;
         }
+
+        .sidebar-logo {
+          padding: 10px 16px !important;
+          border-bottom: none !important;
+          display: flex;
+          align-items: center;
+        }
+
+        .logo-emoji { font-size: 20px !important; }
+        .logo-name { font-size: 16px !important; letter-spacing: 1px !important; }
+
+        .sidebar-section-title { display: none !important; }
+        .room-item { display: none !important; }
+        .sidebar-spacer { display: none !important; }
+
+        .sidebar-user {
+          border-top: none !important;
+          padding: 8px 16px !important;
+          background: rgba(0,0,0,0.2);
+          gap: 8px !important;
+        }
+
+        .user-avatar { width: 32px !important; height: 32px !important; font-size: 13px !important; }
+        .user-name { font-size: 13px !important; }
+        .user-status { font-size: 10px !important; }
+        .icon-btn { width: 30px !important; height: 30px !important; font-size: 13px !important; }
+
+        /* CHAT MAIN */
+        .chat-main { flex: 1; height: calc(100vh - 110px); }
+
+        .chat-header {
+          padding: 10px 12px !important;
+          gap: 8px !important;
+          flex-wrap: nowrap;
+        }
+
+        .sidebar-toggle { display: none !important; }
+
+        .chat-header-avatar {
+          width: 32px !important;
+          height: 32px !important;
+          font-size: 16px !important;
+          border-radius: 8px !important;
+        }
+
+        .chat-header-name { font-size: 14px !important; }
+        .chat-header-status { font-size: 10px !important; }
+        .msg-count { display: none !important; }
+
+        .header-btn {
+          width: 30px !important;
+          height: 30px !important;
+          font-size: 13px !important;
+        }
+
+        /* MESSAGES */
+        .messages-area { padding: 12px 12px !important; gap: 10px !important; }
+        .msg-row { max-width: 85% !important; }
+        .msg-bubble { font-size: 13px !important; padding: 9px 13px !important; }
+        .msg-image { max-width: 220px !important; max-height: 180px !important; }
+        .msg-avatar { width: 28px !important; height: 28px !important; font-size: 11px !important; }
+
+        /* INPUT AREA */
+        .input-area { padding: 10px 12px 12px !important; }
+        .input-row { padding: 4px 4px 4px 10px !important; gap: 8px !important; }
+        .emoji-btn { width: 30px !important; height: 30px !important; font-size: 16px !important; }
+        .img-upload-btn { width: 30px !important; height: 30px !important; font-size: 16px !important; }
+        .msg-input { font-size: 13px !important; }
+        .send-btn { width: 36px !important; height: 36px !important; font-size: 16px !important; border-radius: 10px !important; }
+
+        /* EMOJI PICKER */
+        .emoji-picker-popup { width: calc(100vw - 24px) !important; left: 12px !important; bottom: 70px !important; }
+        .emoji-grid { grid-template-columns: repeat(8, 1fr) !important; }
+
+        /* SEARCH BAR */
+        .search-bar { padding: 8px 12px !important; }
+        .search-input { font-size: 13px !important; padding: 8px 12px !important; }
+
+        /* BG PICKER */
+        .bg-picker-dropdown { right: 8px !important; min-width: 180px !important; }
+        .bg-option { font-size: 11px !important; padding: 8px 8px !important; }
+
+        /* PINNED PANEL */
+        .pinned-panel { padding: 12px 16px !important; }
+
+        /* PROFILE MODAL */
+        .profile-modal { width: 95vw !important; padding: 16px !important; }
+        .profile-avatar-preview { width: 60px !important; height: 60px !important; font-size: 24px !important; }
+
+        /* IMAGE PREVIEW */
+        .image-preview-bar { padding: 8px 10px !important; }
+        .preview-img { width: 48px !important; height: 48px !important; }
+      }
+
+      /* Extra small phones */
+      @media (max-width: 380px) {
+        .chat-header-name { font-size: 12px !important; }
+        .header-btn { width: 26px !important; height: 26px !important; font-size: 12px !important; }
+        .msg-row { max-width: 90% !important; }
+      }
       `}</style>
 
       {/* DRAG OVERLAY */}
@@ -586,9 +683,28 @@ function Chat({ username, onLogout }) {
             </div>
 
             <div className="profile-avatar-section">
-              <div className="profile-avatar-preview" style={{ background: profileEdit.avatar_color }}>
-                {getInitial(username)}
+              <div className="profile-avatar-preview" 
+                style={{ background: profileEdit.avatar_color, cursor: 'pointer', position: 'relative', overflow: 'hidden' }}
+                onClick={() => document.getElementById('avatar-upload').click()}
+                title="Click to change photo"
+              >
+                {profileEdit.avatar_url ? (
+                  <img src={profileEdit.avatar_url} alt="" style={{width:'100%', height:'100%', objectFit:'cover', borderRadius:'50%'}} />
+                ) : (
+                  getInitial(username)
+                )}
+                <div style={{position:'absolute', bottom:0, left:0, right:0, background:'rgba(0,0,0,0.5)', fontSize:'10px', color:'white', textAlign:'center', padding:'3px'}}>
+                  📷 Edit
+                </div>
               </div>
+              <input id="avatar-upload" type="file" accept="image/*" style={{display:'none'}} onChange={async (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                try {
+                  const url = await uploadToCloudinary(file);
+                  setProfileEdit(prev => ({ ...prev, avatar_url: url }));
+                } catch (err) { console.error('Avatar upload failed'); }
+              }} />
               <div className="avatar-colors">
                 {AVATAR_COLORS.map(color => (
                   <div key={color} className={`avatar-color-btn ${profileEdit.avatar_color === color ? 'selected' : ''}`}
@@ -657,7 +773,11 @@ function Chat({ username, onLogout }) {
           </div>
           <div className="sidebar-spacer"></div>
           <div className="sidebar-user">
-            <div className="user-avatar" style={{ background: profile.avatar_color }}>{getInitial(username)}</div>
+            <div className="user-avatar" style={{ background: profile.avatar_color, overflow: 'hidden', padding: 0 }}>
+              {profile.avatar_url ? (
+                <img src={profile.avatar_url} alt="" style={{width:'100%', height:'100%', objectFit:'cover', borderRadius:'50%'}} />
+              ) : getInitial(username)}
+            </div>
             <div className="user-info">
               <div className="user-name">{username}</div>
               <div className="user-status">{profile.bio || '● Online'}</div>
@@ -761,7 +881,11 @@ function Chat({ username, onLogout }) {
                       </div>
                     )}
                     <div className={`msg-row ${isMine ? 'mine' : 'theirs'}`}>
-                      <div className="msg-avatar">{getInitial(msg.username)}</div>
+                      <div className="msg-avatar" style={{padding:0, overflow:'hidden'}}>
+                        {isMine && profile.avatar_url ? (
+                          <img src={profile.avatar_url} alt="" style={{width:'100%', height:'100%', objectFit:'cover', borderRadius:'50%'}} />
+                        ) : getInitial(msg.username)}
+                      </div>
                       <div className="msg-content">
                         {!isMine && <span className="msg-sender">{msg.username}</span>}
                         {isEditing ? (
@@ -776,8 +900,18 @@ function Chat({ username, onLogout }) {
                           <>
                             <div className="msg-bubble">
                               {msg.text?.startsWith('__IMAGE__') ? (
-                                <img src={msg.text.replace('__IMAGE__', '')} alt="" className="msg-image"
-                                  onClick={() => window.open(msg.text.replace('__IMAGE__', ''), '_blank')} />
+                                  (() => {
+                                    const parts = msg.text.replace('__IMAGE__', '').split('__CAPTION__');
+                                    const imgUrl = parts[0];
+                                    const caption = parts[1];
+                                    return (
+                                      <div>
+                                        <img src={imgUrl} alt="" className="msg-image"
+                                          onClick={() => window.open(imgUrl, '_blank')} />
+                                        {caption && <p style={{marginTop: '8px', fontSize: '14px', color: 'inherit'}}>{caption}</p>}
+                                      </div>
+                                    );
+                                  })()
                               ) : searchQuery ? (
                                 msg.text?.split(new RegExp(`(${searchQuery})`, 'gi')).map((part, i) =>
                                   part.toLowerCase() === searchQuery.toLowerCase()
