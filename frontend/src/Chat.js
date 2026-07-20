@@ -203,17 +203,36 @@ function Chat({ username, onLogout }) {
     formData.append('file', file);
     formData.append('upload_preset', 'chat_app_uploads');
     formData.append('cloud_name', 'r2mj3pjl');
-    const res = await fetch('https://api.cloudinary.com/v1_1/r2mj3pjl/image/upload', { method: 'POST', body: formData });
+    const isImage = file.type.startsWith('image/');
+    const uploadUrl = isImage
+      ? 'https://api.cloudinary.com/v1_1/r2mj3pjl/image/upload'
+      : 'https://api.cloudinary.com/v1_1/r2mj3pjl/raw/upload';
+    const res = await fetch(uploadUrl, { method: 'POST', body: formData });
     const data = await res.json();
     return data.secure_url;
   };
 
+  const getFileIcon = (file) => {
+    if (!file) return '📎';
+    if (file.type.startsWith('image/')) return '🖼️';
+    if (file.type === 'application/pdf') return '📄';
+    if (file.type.includes('word') || file.name.endsWith('.docx') || file.name.endsWith('.doc')) return '📝';
+    if (file.type.includes('zip') || file.name.endsWith('.zip') || file.name.endsWith('.rar')) return '🗜️';
+    if (file.type.includes('excel') || file.name.endsWith('.xlsx')) return '📊';
+    if (file.type.includes('powerpoint') || file.name.endsWith('.pptx')) return '📊';
+    return '📎';
+  };
+
   const handleImageSelect = (file) => {
-    if (!file || !file.type.startsWith('image/')) return;
+    if (!file) return;
     setImageFile(file);
-    const reader = new FileReader();
-    reader.onload = (e) => setImagePreview(e.target.result);
-    reader.readAsDataURL(file);
+    if (file.type.startsWith('image/')) {
+      const reader = new FileReader();
+      reader.onload = (e) => setImagePreview(e.target.result);
+      reader.readAsDataURL(file);
+    } else {
+      setImagePreview(null);
+    }
   };
 
   const handleFileInput = (e) => handleImageSelect(e.target.files[0]);
@@ -230,9 +249,15 @@ function Chat({ username, onLogout }) {
     try {
       const url = await uploadToCloudinary(imageFile);
       const caption = input.trim();
-      socket.emit('send_message', { 
-        username, 
-        text: `__IMAGE__${url}${caption ? `__CAPTION__${caption}` : ''}`,
+      const isImage = imageFile.type.startsWith('image/');
+      const prefix = isImage ? '__IMAGE__' : '__FILE__';
+      const fileName = imageFile.name;
+      const fileIcon = getFileIcon(imageFile);
+      socket.emit('send_message', {
+        username,
+        text: isImage
+          ? `__IMAGE__${url}${caption ? `__CAPTION__${caption}` : ''}`
+          : `__FILE__${url}__FILENAME__${fileName}__FILEICON__${fileIcon}${caption ? `__CAPTION__${caption}` : ''}`,
         reply_to: replyingTo ? {
           _id: replyingTo._id,
           username: replyingTo.username,
@@ -728,6 +753,22 @@ function Chat({ username, onLogout }) {
 
         .msg-row.mine .msg-reply-preview { border-left-color: rgba(255,255,255,0.4); }
         .msg-row.mine .msg-reply-name { color: rgba(255,255,255,0.8); }
+
+        /* ===== FILE MESSAGE ===== */
+          .file-msg {
+            display: flex; align-items: center; gap: 12px;
+            background: rgba(255,255,255,0.08);
+            border: 1px solid rgba(255,255,255,0.15);
+            border-radius: 12px; padding: 12px 16px;
+            cursor: pointer; transition: all 0.2s ease;
+            min-width: 200px;
+          }
+          .file-msg:hover { background: rgba(255,255,255,0.15); transform: translateY(-1px); }
+          .file-msg-icon { font-size: 32px; flex-shrink: 0; }
+          .file-msg-info { flex: 1; overflow: hidden; }
+          .file-msg-name { font-size: 13px; font-weight: 600; color: white; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+          .file-msg-action { font-size: 11px; color: rgba(255,255,255,0.4); margin-top: 2px; }
+
       `}</style>
 
       {/* DRAG OVERLAY */}
@@ -970,23 +1011,45 @@ function Chat({ username, onLogout }) {
                                   <div className="msg-reply-preview">
                                     <div className="msg-reply-name">↩️ {msg.reply_to.username}</div>
                                     <div className="msg-reply-text">
-                                      {msg.reply_to.text?.startsWith('__IMAGE__') ? '🖼️ Image' : msg.reply_to.text}
+                                      {msg.reply_to.text?.startsWith('__IMAGE__') ? '🖼️ Image' : msg.reply_to.text?.startsWith('__FILE__') ? '📎 File' : msg.reply_to.text}
                                     </div>
                                   </div>
                                 )}
                                 {msg.text?.startsWith('__IMAGE__') ? (
-                                  (() => {
-                                    const parts = msg.text.replace('__IMAGE__', '').split('__CAPTION__');
-                                    const imgUrl = parts[0];
-                                    const caption = parts[1];
-                                    return (
-                                      <div>
-                                        <img src={imgUrl} alt="" className="msg-image"
-                                          onClick={() => window.open(imgUrl, '_blank')} />
-                                        {caption && <p style={{marginTop: '8px', fontSize: '14px', color: 'inherit'}}>{caption}</p>}
-                                      </div>
-                                    );
-                                  })()
+                                    (() => {
+                                      const parts = msg.text.replace('__IMAGE__', '').split('__CAPTION__');
+                                      const imgUrl = parts[0];
+                                      const caption = parts[1];
+                                      return (
+                                        <div>
+                                          <img src={imgUrl} alt="" className="msg-image"
+                                            onClick={() => window.open(imgUrl, '_blank')} />
+                                          {caption && <p style={{marginTop: '8px', fontSize: '14px', color: 'inherit'}}>{caption}</p>}
+                                        </div>
+                                      );
+                                    })()
+                                  ) : msg.text?.startsWith('__FILE__') ? (
+                                    (() => {
+                                      const withoutPrefix = msg.text.replace('__FILE__', '');
+                                      const urlPart = withoutPrefix.split('__FILENAME__')[0];
+                                      const rest = withoutPrefix.split('__FILENAME__')[1] || '';
+                                      const filenamePart = rest.split('__FILEICON__')[0];
+                                      const iconAndCaption = rest.split('__FILEICON__')[1] || '';
+                                      const icon = iconAndCaption.split('__CAPTION__')[0];
+                                      const caption = iconAndCaption.split('__CAPTION__')[1];
+                                      return (
+                                        <div>
+                                          <div className="file-msg" onClick={() => window.open(urlPart, '_blank')}>
+                                            <span className="file-msg-icon">{icon || '📎'}</span>
+                                            <div className="file-msg-info">
+                                              <div className="file-msg-name">{filenamePart}</div>
+                                              <div className="file-msg-action">Click to download ⬇️</div>
+                                            </div>
+                                          </div>
+                                          {caption && <p style={{marginTop: '8px', fontSize: '14px', color: 'inherit'}}>{caption}</p>}
+                                        </div>
+                                      );
+                                    })()
                               ) : searchQuery ? (
                                 msg.text?.split(new RegExp(`(${searchQuery})`, 'gi')).map((part, i) =>
                                   part.toLowerCase() === searchQuery.toLowerCase()
@@ -1064,15 +1127,21 @@ function Chat({ username, onLogout }) {
                   <div className="reply-bar-content">
                     <div className="reply-bar-name">↩️ Replying to {replyingTo.username}</div>
                     <div className="reply-bar-text">
-                      {replyingTo.text?.startsWith('__IMAGE__') ? '🖼️ Image' : replyingTo.text}
+                       {replyingTo.text?.startsWith('__IMAGE__') ? '🖼️ Image' : replyingTo.text?.startsWith('__FILE__') ? '📎 File' : replyingTo.text}
                     </div>
                   </div>
                   <button className="reply-bar-cancel" onClick={() => setReplyingTo(null)}>✕</button>
                 </div>
               )}
-            {imagePreview && (
+            {imageFile && (
               <div className="image-preview-bar">
-                <img src={imagePreview} alt="" className="preview-img" />
+                {imagePreview ? (
+                  <img src={imagePreview} alt="" className="preview-img" />
+                ) : (
+                  <div style={{ width: '60px', height: '60px', background: 'rgba(102,126,234,0.2)', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '28px', flexShrink: 0 }}>
+                    {getFileIcon(imageFile)}
+                  </div>
+                )}
                 <div className="preview-info">
                   <div className="preview-name">{imageFile?.name}</div>
                   <div className="preview-size">{(imageFile?.size / 1024).toFixed(1)} KB</div>
@@ -1094,7 +1163,7 @@ function Chat({ username, onLogout }) {
             <form className="input-row" onSubmit={sendMessage}>
               <button type="button" className={`emoji-btn ${showEmojiPicker ? 'active' : ''}`} onClick={() => setShowEmojiPicker(!showEmojiPicker)}>😊</button>
               <button type="button" className="img-upload-btn" onClick={() => fileInputRef.current?.click()}>📷</button>
-              <input ref={fileInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleFileInput} />
+              <input ref={fileInputRef} type="file" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip,.rar,.txt" style={{ display: 'none' }} onChange={handleFileInput} />
               <input className="msg-input" type="text" placeholder={imageFile ? 'Add a caption... (optional)' : 'Message #general...'} value={input} onChange={handleInputChange} />
               <button type="submit" className="send-btn ripple-btn" disabled={uploading}>{uploading ? '⏳' : '➤'}</button>
             </form>
