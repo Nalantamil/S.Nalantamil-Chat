@@ -143,7 +143,7 @@ function Chat({ username, onLogout }) {
         new_password: ''
       });
     }
-  }, [showProfile]);
+  }, [showProfile, profile.bio, profile.avatar_color, profile.avatar_url]);
   // ===== MESSAGE HANDLERS =====
   const handleInputChange = (e) => {
     setInput(e.target.value);
