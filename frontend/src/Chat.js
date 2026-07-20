@@ -250,7 +250,6 @@ function Chat({ username, onLogout }) {
       const url = await uploadToCloudinary(imageFile);
       const caption = input.trim();
       const isImage = imageFile.type.startsWith('image/');
-      const prefix = isImage ? '__IMAGE__' : '__FILE__';
       const fileName = imageFile.name;
       const fileIcon = getFileIcon(imageFile);
       socket.emit('send_message', {
