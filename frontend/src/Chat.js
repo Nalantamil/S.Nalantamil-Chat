@@ -1038,21 +1038,8 @@ function Chat({ username, onLogout }) {
                                       const caption = iconAndCaption.split('__CAPTION__')[1];
                                       return (
                                         <div>
-                                          <div className="file-msg" onClick={async () => {
-                                              try {
-                                                const response = await fetch(urlPart);
-                                                const blob = await response.blob();
-                                                const blobUrl = window.URL.createObjectURL(blob);
-                                                const a = document.createElement('a');
-                                                a.href = blobUrl;
-                                                a.download = filenamePart || 'download';
-                                                document.body.appendChild(a);
-                                                a.click();
-                                                document.body.removeChild(a);
-                                                window.URL.revokeObjectURL(blobUrl);
-                                              } catch (err) {
-                                                window.open(urlPart, '_blank');
-                                              }
+                                          <div className="file-msg" onClick={() => {
+                                              window.open(urlPart, '_blank');
                                             }}>
                                             <span className="file-msg-icon">{icon || '📎'}</span>
                                             <div className="file-msg-info">
