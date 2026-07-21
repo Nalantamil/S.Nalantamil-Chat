@@ -15,6 +15,8 @@ function App() {
   const [rememberMe, setRememberMe] = useState(false);
   const [fieldErrors, setFieldErrors] = useState({ username: '', password: '' });
   const [forgotMsg, setForgotMsg] = useState('');
+  const [loginSuccess, setLoginSuccess] = useState(false);
+  const [errorAction, setErrorAction] = useState(null); // { label, onClick }
 
   // Load remembered username on mount
   useEffect(() => {
@@ -25,19 +27,26 @@ function App() {
     }
   }, []);
 
+  const getPasswordChecks = (pwd) => ({
+    length: pwd.length >= 8,
+    uppercase: /[A-Z]/.test(pwd),
+    number: /[0-9]/.test(pwd),
+    special: /[^A-Za-z0-9]/.test(pwd),
+  });
+
   const getPasswordStrength = (pwd) => {
     if (!pwd) return { label: '', level: 0 };
-    let score = 0;
-    if (pwd.length >= 8) score++;
+    const checks = getPasswordChecks(pwd);
+    let score = Object.values(checks).filter(Boolean).length;
     if (pwd.length >= 12) score++;
-    if (/[A-Z]/.test(pwd) && /[a-z]/.test(pwd)) score++;
-    if (/[0-9]/.test(pwd)) score++;
-    if (/[^A-Za-z0-9]/.test(pwd)) score++;
 
     if (score <= 1) return { label: 'Weak', level: 1 };
-    if (score <= 3) return { label: 'Medium', level: 2 };
-    return { label: 'Strong', level: 3 };
+    if (score === 2) return { label: 'Medium', level: 2 };
+    if (score <= 4) return { label: 'Strong', level: 3 };
+    return { label: 'Very Strong', level: 4 };
   };
+
+  const passwordChecks = getPasswordChecks(password);
 
   const passwordStrength = getPasswordStrength(password);
 
@@ -66,6 +75,7 @@ function App() {
     e.preventDefault();
     setMessage('');
     setForgotMsg('');
+    setErrorAction(null);
 
     if (!validateFields()) return;
 
@@ -83,14 +93,27 @@ function App() {
         } else {
           localStorage.removeItem('rememberedUsername');
         }
-        setLoggedInUser(username);
+        setLoading(false);
+        setLoginSuccess(true);
+        setTimeout(() => setLoggedInUser(username), 900);
+        return;
       } else {
         setMessage('🎉 Account created! Please login.');
         setIsLogin(true);
       }
     } catch (error) {
       setIsError(true);
-      setMessage('❌ ' + (error.response?.data?.error || 'Something went wrong'));
+      const rawMsg = error.response?.data?.error || 'Something went wrong';
+      const lower = rawMsg.toLowerCase();
+      if (lower.includes('password')) {
+        setMessage('❌ Incorrect password.');
+        setErrorAction({ label: 'Forgot your password?', onClick: handleForgotPassword });
+      } else if (lower.includes('user') || lower.includes('exist') || lower.includes('not found')) {
+        setMessage(`❌ ${rawMsg}`);
+        setErrorAction({ label: 'Create an account?', onClick: () => { setIsLogin(false); setMessage(''); setErrorAction(null); } });
+      } else {
+        setMessage('❌ ' + rawMsg);
+      }
     }
     setLoading(false);
   };
@@ -98,6 +121,7 @@ function App() {
   const handleLogout = () => {
     localStorage.removeItem('token');
     setLoggedInUser(null);
+    setLoginSuccess(false);
     setUsername('');
     setPassword('');
     setMessage('');
@@ -179,10 +203,12 @@ function App() {
         .strength-bar.filled-weak { background: #e74c3c; }
         .strength-bar.filled-medium { background: #f39c12; }
         .strength-bar.filled-strong { background: #2ecc71; }
-        .strength-label { font-size: 11px; margin: -8px 2px 12px; font-weight: 600; }
+        .strength-bar.filled-verystrong { background: #00d4aa; }
+        .strength-label { font-size: 11px; margin: -8px 2px 4px; font-weight: 600; }
         .strength-label.weak { color: #e74c3c; }
         .strength-label.medium { color: #f39c12; }
         .strength-label.strong { color: #2ecc71; }
+        .strength-label.verystrong { color: #00d4aa; }
         .form-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; }
         .remember-me { display: flex; align-items: center; gap: 7px; color: rgba(255,255,255,0.5); font-size: 13px; cursor: pointer; user-select: none; }
         .remember-me input { accent-color: #667eea; width: 15px; height: 15px; cursor: pointer; }
@@ -202,6 +228,30 @@ function App() {
         .footer-text { text-align: center; color: rgba(255,255,255,0.4); font-size: 13px; margin-top: 4px; }
         .footer-link { color: #667eea; cursor: pointer; font-weight: 600; }
         .footer-link:hover { color: #f093fb; }
+
+        /* ===== USERNAME HINT ===== */
+        .field-hint { color: rgba(255,255,255,0.35); font-size: 11px; margin: 4px 2px 12px; }
+
+        /* ===== PASSWORD CHECKLIST ===== */
+        .password-checklist { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 8px 2px 12px; }
+        .check-item { font-size: 11px; display: flex; align-items: center; gap: 4px; color: rgba(255,255,255,0.3); transition: color 0.2s ease; }
+        .check-item.met { color: #2ecc71; }
+
+        /* ===== ERROR ACTION LINK ===== */
+        .error-action-link { display: block; text-align: center; margin-top: -8px; margin-bottom: 8px; color: #667eea; font-size: 13px; font-weight: 600; cursor: pointer; background: none; border: none; }
+        .error-action-link:hover { color: #f093fb; }
+
+        /* ===== SUCCESS OVERLAY ===== */
+        @keyframes checkPop {
+          0% { transform: scale(0); opacity: 0; }
+          60% { transform: scale(1.2); opacity: 1; }
+          100% { transform: scale(1); opacity: 1; }
+        }
+        .success-screen { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 40px 20px; animation: fadeIn 0.3s ease; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        .success-check { width: 64px; height: 64px; border-radius: 50%; background: rgba(46,204,113,0.15); border: 2px solid #2ecc71; display: flex; align-items: center; justify-content: center; font-size: 32px; color: #2ecc71; animation: checkPop 0.5s ease; }
+        .success-title { font-size: 18px; font-weight: 700; color: white; }
+        .success-sub { font-size: 13px; color: rgba(255,255,255,0.5); display: flex; align-items: center; gap: 8px; }
 
         @media (max-width: 480px) {
           .page { padding: 16px; }
@@ -239,6 +289,14 @@ function App() {
         <div className="blob blob2"></div>
         <div className="blob blob3"></div>
         <div className="card">
+          {loginSuccess ? (
+            <div className="success-screen">
+              <div className="success-check">✓</div>
+              <div className="success-title">Login Successful</div>
+              <div className="success-sub"><span className="spinner"></span> Redirecting...</div>
+            </div>
+          ) : (
+          <>
           <div className="logo-area">
             <span className="logo-icon">💬</span>
             <div className="logo-text">Nalantamil</div>
@@ -262,6 +320,9 @@ function App() {
               />
             </div>
             {fieldErrors.username && <div className="field-error-text">❌ {fieldErrors.username}</div>}
+            {!isLogin && !fieldErrors.username && (
+              <div className="field-hint">3-20 characters · Letters, numbers, underscore</div>
+            )}
 
             <div className="input-group">
               <span className="input-icon">🔒</span>
@@ -283,12 +344,18 @@ function App() {
             {!isLogin && password && (
               <>
                 <div className="strength-bar-wrap">
-                  <div className={`strength-bar ${passwordStrength.level >= 1 ? `filled-${passwordStrength.label.toLowerCase()}` : ''}`}></div>
-                  <div className={`strength-bar ${passwordStrength.level >= 2 ? `filled-${passwordStrength.label.toLowerCase()}` : ''}`}></div>
-                  <div className={`strength-bar ${passwordStrength.level >= 3 ? `filled-${passwordStrength.label.toLowerCase()}` : ''}`}></div>
+                  {[1, 2, 3, 4].map(tier => (
+                    <div key={tier} className={`strength-bar ${passwordStrength.level >= tier ? `filled-${passwordStrength.label.toLowerCase().replace(' ', '')}` : ''}`}></div>
+                  ))}
                 </div>
-                <div className={`strength-label ${passwordStrength.label.toLowerCase()}`}>
+                <div className={`strength-label ${passwordStrength.label.toLowerCase().replace(' ', '')}`}>
                   Password Strength: {passwordStrength.label}
+                </div>
+                <div className="password-checklist">
+                  <span className={`check-item ${passwordChecks.length ? 'met' : ''}`}>{passwordChecks.length ? '✓' : '○'} 8+ characters</span>
+                  <span className={`check-item ${passwordChecks.uppercase ? 'met' : ''}`}>{passwordChecks.uppercase ? '✓' : '○'} Uppercase</span>
+                  <span className={`check-item ${passwordChecks.number ? 'met' : ''}`}>{passwordChecks.number ? '✓' : '○'} Number</span>
+                  <span className={`check-item ${passwordChecks.special ? 'met' : ''}`}>{passwordChecks.special ? '✓' : '○'} Special character</span>
                 </div>
               </>
             )}
@@ -310,6 +377,7 @@ function App() {
           </form>
           {forgotMsg && <div className="forgot-msg">{forgotMsg}</div>}
           {message && <div className={`message ${isError ? 'error' : 'success'}`}>{message}</div>}
+          {errorAction && <button className="error-action-link" onClick={errorAction.onClick}>{errorAction.label}</button>}
           <div className="divider"><div className="divider-line"></div><span className="divider-text">or</span><div className="divider-line"></div></div>
           <p className="footer-text">
             {isLogin ? "New here? " : "Already have an account? "}
@@ -317,6 +385,8 @@ function App() {
               {isLogin ? 'Create an account →' : '← Back to Login'}
             </span>
           </p>
+          </>
+          )}
         </div>
       </div>
     </>
