@@ -420,8 +420,9 @@ function Chat({ username, onLogout }) {
           opacity: ${sidebarOpen ? '1' : '0'};
         }
 
-        .sidebar-logo { padding: 28px 24px 20px; border-bottom: 1px solid rgba(255,255,255,0.07); }
+        .sidebar-logo { padding: 28px 24px 20px; border-bottom: 1px solid rgba(255,255,255,0.07); display: flex; align-items: center; justify-content: space-between; }
         .logo-row { display: flex; align-items: center; gap: 10px; }
+        .sidebar-close-btn { display: none; }
         .logo-emoji { font-size: 26px; filter: drop-shadow(0 0 8px rgba(102,126,234,0.9)); transition: transform 0.3s ease; cursor: pointer; }
         .logo-emoji:hover { transform: scale(1.2) rotate(10deg); }
         .logo-name { font-size: 20px; font-weight: 800; background: linear-gradient(135deg, #667eea, #f093fb); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; letter-spacing: 2px; }
@@ -738,9 +739,25 @@ function Chat({ username, onLogout }) {
         .sidebar-logo {
           padding: 20px 20px 16px !important;
           border-bottom: 1px solid rgba(255,255,255,0.07) !important;
-          display: flex;
+          display: flex !important;
           align-items: center;
+          justify-content: space-between !important;
         }
+
+        .sidebar-close-btn {
+          display: flex !important;
+          background: rgba(255,255,255,0.08);
+          border: 1px solid rgba(255,255,255,0.12);
+          color: rgba(255,255,255,0.7);
+          width: 30px; height: 30px;
+          border-radius: 8px;
+          align-items: center;
+          justify-content: center;
+          font-size: 15px;
+          cursor: pointer;
+          flex-shrink: 0;
+        }
+        .sidebar-close-btn:hover { background: rgba(231,76,60,0.25); color: #e74c3c; }
 
         .logo-emoji { font-size: 24px !important; }
         .logo-name { font-size: 18px !important; letter-spacing: 1px !important; }
@@ -758,6 +775,13 @@ function Chat({ username, onLogout }) {
 
         /* CHAT MAIN — full height, drawer overlays instead of pushing */
         .chat-main { flex: 1; height: 100vh; }
+
+        /* Fully inert + dimmed behind the open drawer — no stray clicks or bright icons */
+        .chat-main.drawer-open {
+          pointer-events: none !important;
+          filter: brightness(0.35) saturate(0.7);
+          transition: filter 0.25s ease;
+        }
 
         .chat-header {
           padding: 10px 12px !important;
@@ -1010,6 +1034,7 @@ function Chat({ username, onLogout }) {
               <span className="logo-emoji">💬</span>
               <span className="logo-name">Nalantamil</span>
             </div>
+            <button className="sidebar-close-btn ripple-btn" onClick={() => setSidebarOpen(false)} title="Close menu">✕</button>
           </div>
           <div className="sidebar-section-title">Channels</div>
           <div className="room-item" onClick={() => setSidebarOpen(false)}>
@@ -1041,7 +1066,7 @@ function Chat({ username, onLogout }) {
         </div>
 
         {/* MAIN CHAT */}
-        <div className="chat-main" onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop} onPaste={handlePaste}>
+        <div className={`chat-main${sidebarOpen ? ' drawer-open' : ''}`} onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop} onPaste={handlePaste}>
           <div className="chat-header">
             <button className="sidebar-toggle ripple-btn" onClick={() => setSidebarOpen(!sidebarOpen)}>
               {sidebarOpen ? '◀' : '▶'}
