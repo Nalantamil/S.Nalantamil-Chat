@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import Chat from './Chat';
 
@@ -11,19 +11,78 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [focusedInput, setFocusedInput] = useState('');
   const [loggedInUser, setLoggedInUser] = useState(null);
+  const [showPassword, setShowPassword] = useState(false);
+  const [rememberMe, setRememberMe] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState({ username: '', password: '' });
+  const [forgotMsg, setForgotMsg] = useState('');
+
+  // Load remembered username on mount
+  useEffect(() => {
+    const remembered = localStorage.getItem('rememberedUsername');
+    if (remembered) {
+      setUsername(remembered);
+      setRememberMe(true);
+    }
+  }, []);
+
+  const getPasswordStrength = (pwd) => {
+    if (!pwd) return { label: '', level: 0 };
+    let score = 0;
+    if (pwd.length >= 8) score++;
+    if (pwd.length >= 12) score++;
+    if (/[A-Z]/.test(pwd) && /[a-z]/.test(pwd)) score++;
+    if (/[0-9]/.test(pwd)) score++;
+    if (/[^A-Za-z0-9]/.test(pwd)) score++;
+
+    if (score <= 1) return { label: 'Weak', level: 1 };
+    if (score <= 3) return { label: 'Medium', level: 2 };
+    return { label: 'Strong', level: 3 };
+  };
+
+  const passwordStrength = getPasswordStrength(password);
+
+  const validateFields = () => {
+    const errors = { username: '', password: '' };
+    let valid = true;
+
+    if (!username.trim()) {
+      errors.username = 'Username required';
+      valid = false;
+    }
+
+    if (!password) {
+      errors.password = 'Password required';
+      valid = false;
+    } else if (!isLogin && password.length < 8) {
+      errors.password = 'Password must contain at least 8 characters';
+      valid = false;
+    }
+
+    setFieldErrors(errors);
+    return valid;
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setMessage('');
+    setForgotMsg('');
+
+    if (!validateFields()) return;
+
     setLoading(true);
-  const url = isLogin
-    ? 'https://s-nalantamil-chat.onrender.com/login'
-    : 'https://s-nalantamil-chat.onrender.com/signup';
+    const url = isLogin
+      ? 'https://s-nalantamil-chat.onrender.com/login'
+      : 'https://s-nalantamil-chat.onrender.com/signup';
     try {
       const response = await axios.post(url, { username, password });
       setIsError(false);
       if (isLogin) {
         localStorage.setItem('token', response.data.token);
+        if (rememberMe) {
+          localStorage.setItem('rememberedUsername', username);
+        } else {
+          localStorage.removeItem('rememberedUsername');
+        }
         setLoggedInUser(username);
       } else {
         setMessage('🎉 Account created! Please login.');
@@ -42,6 +101,10 @@ function App() {
     setUsername('');
     setPassword('');
     setMessage('');
+  };
+
+  const handleForgotPassword = () => {
+    setForgotMsg('🔧 Password reset is coming soon — please contact support for now.');
   };
 
   if (loggedInUser) {
@@ -70,6 +133,11 @@ function App() {
           to { opacity: 1; transform: translateY(0); }
         }
         @keyframes spin { to { transform: rotate(360deg); } }
+        @keyframes shake {
+          0%, 100% { transform: translateX(0); }
+          25% { transform: translateX(-4px); }
+          75% { transform: translateX(4px); }
+        }
         body {
           min-height: 100vh;
           background: linear-gradient(-45deg, #0f0c29, #302b63, #24243e, #1a1a2e, #0f3460, #533483);
@@ -91,17 +159,36 @@ function App() {
         .blob3 { width: 200px; height: 200px; background: rgba(79,172,254,0.2); top: 50%; left: 50%; animation-delay: 1s; }
         .card { background: rgba(255,255,255,0.08); backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.15); border-radius: 24px; padding: 48px 40px; width: 400px; box-shadow: 0 25px 50px rgba(0,0,0,0.5); animation: slideIn 0.6s ease; position: relative; z-index: 10; }
         .logo-area { text-align: center; margin-bottom: 32px; animation: float 6s ease-in-out infinite; }
-        .logo-icon { font-size: 52px; display: block; margin-bottom: 10px; filter: drop-shadow(0 0 20px rgba(102,126,234,0.8)); }
-        .logo-text { font-size: 28px; font-weight: 800; background: linear-gradient(135deg, #667eea, #f093fb); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; letter-spacing: 2px; }
+        .logo-icon { font-size: 62px; display: block; margin-bottom: 10px; filter: drop-shadow(0 0 20px rgba(102,126,234,0.8)); }
+        .logo-text { font-size: 33px; font-weight: 800; background: linear-gradient(135deg, #667eea, #f093fb); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; letter-spacing: 2px; }
         .logo-sub { color: rgba(255,255,255,0.5); font-size: 13px; margin-top: 4px; letter-spacing: 1px; }
         .tabs { display: flex; background: rgba(255,255,255,0.05); border-radius: 12px; padding: 4px; margin-bottom: 28px; border: 1px solid rgba(255,255,255,0.08); }
         .tab { flex: 1; padding: 10px; text-align: center; border-radius: 9px; cursor: pointer; font-size: 14px; font-weight: 600; transition: all 0.3s ease; color: rgba(255,255,255,0.5); border: none; background: transparent; }
         .tab.active { background: linear-gradient(135deg, #667eea, #764ba2); color: white; box-shadow: 0 4px 15px rgba(102,126,234,0.4); }
-        .input-group { margin-bottom: 18px; position: relative; }
-        .input-icon { position: absolute; left: 16px; top: 50%; transform: translateY(-50%); font-size: 18px; z-index: 1; }
-        .input-field { width: 100%; padding: 14px 14px 14px 46px; background: rgba(255,255,255,0.07); border: 1.5px solid rgba(255,255,255,0.1); border-radius: 12px; color: white; font-size: 14px; outline: none; transition: all 0.3s ease; }
+        .input-group { margin-bottom: 6px; position: relative; }
+        .input-icon { position: absolute; left: 16px; top: 26px; transform: translateY(-50%); font-size: 18px; z-index: 1; }
+        .input-field { width: 100%; padding: 14px 44px 14px 46px; background: rgba(255,255,255,0.07); border: 1.5px solid rgba(255,255,255,0.1); border-radius: 12px; color: white; font-size: 14px; outline: none; transition: all 0.3s ease; }
         .input-field::placeholder { color: rgba(255,255,255,0.35); }
         .input-field.focused { border-color: #667eea; background: rgba(102,126,234,0.1); box-shadow: 0 0 0 3px rgba(102,126,234,0.15); }
+        .input-field.field-error { border-color: #e74c3c; }
+        .field-error-text { color: #e74c3c; font-size: 12px; margin: 4px 2px 12px; display: flex; align-items: center; gap: 4px; animation: shake 0.3s ease; }
+        .password-toggle-btn { position: absolute; right: 14px; top: 26px; transform: translateY(-50%); background: none; border: none; color: rgba(255,255,255,0.5); font-size: 13px; cursor: pointer; font-weight: 600; letter-spacing: 0.5px; padding: 4px; transition: color 0.2s ease; }
+        .password-toggle-btn:hover { color: #667eea; }
+        .strength-bar-wrap { display: flex; gap: 4px; margin: 6px 2px 12px; }
+        .strength-bar { flex: 1; height: 4px; border-radius: 2px; background: rgba(255,255,255,0.1); transition: background 0.3s ease; }
+        .strength-bar.filled-weak { background: #e74c3c; }
+        .strength-bar.filled-medium { background: #f39c12; }
+        .strength-bar.filled-strong { background: #2ecc71; }
+        .strength-label { font-size: 11px; margin: -8px 2px 12px; font-weight: 600; }
+        .strength-label.weak { color: #e74c3c; }
+        .strength-label.medium { color: #f39c12; }
+        .strength-label.strong { color: #2ecc71; }
+        .form-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; }
+        .remember-me { display: flex; align-items: center; gap: 7px; color: rgba(255,255,255,0.5); font-size: 13px; cursor: pointer; user-select: none; }
+        .remember-me input { accent-color: #667eea; width: 15px; height: 15px; cursor: pointer; }
+        .forgot-link { color: #667eea; font-size: 13px; font-weight: 600; cursor: pointer; background: none; border: none; }
+        .forgot-link:hover { color: #f093fb; }
+        .forgot-msg { text-align: center; margin: -10px 0 16px; padding: 8px 14px; border-radius: 10px; font-size: 12px; background: rgba(102,126,234,0.12); border: 1px solid rgba(102,126,234,0.25); color: #a5b4f5; }
         .submit-btn { width: 100%; padding: 15px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; border-radius: 12px; font-size: 16px; font-weight: 700; cursor: pointer; margin-top: 8px; transition: all 0.3s ease; letter-spacing: 1px; }
         .submit-btn:hover { transform: translateY(-2px); box-shadow: 0 10px 30px rgba(102,126,234,0.5); }
         .submit-btn:disabled { opacity: 0.7; cursor: not-allowed; transform: none; }
@@ -128,28 +215,75 @@ function App() {
             <div className="logo-sub">Chat · Connect · Celebrate</div>
           </div>
           <div className="tabs">
-            <button className={`tab ${isLogin ? 'active' : ''}`} onClick={() => { setIsLogin(true); setMessage(''); }}>Login</button>
-            <button className={`tab ${!isLogin ? 'active' : ''}`} onClick={() => { setIsLogin(false); setMessage(''); }}>Signup</button>
+            <button className={`tab ${isLogin ? 'active' : ''}`} onClick={() => { setIsLogin(true); setMessage(''); setForgotMsg(''); setFieldErrors({ username: '', password: '' }); }}>Login</button>
+            <button className={`tab ${!isLogin ? 'active' : ''}`} onClick={() => { setIsLogin(false); setMessage(''); setForgotMsg(''); setFieldErrors({ username: '', password: '' }); }}>Signup</button>
           </div>
-          <form onSubmit={handleSubmit}>
+          <form onSubmit={handleSubmit} noValidate>
             <div className="input-group">
               <span className="input-icon">👤</span>
-              <input type="text" placeholder="Username" value={username} onChange={(e) => setUsername(e.target.value)} onFocus={() => setFocusedInput('username')} onBlur={() => setFocusedInput('')} className={`input-field ${focusedInput === 'username' ? 'focused' : ''}`} required />
+              <input
+                type="text"
+                placeholder="Username"
+                value={username}
+                onChange={(e) => { setUsername(e.target.value); setFieldErrors(prev => ({ ...prev, username: '' })); }}
+                onFocus={() => setFocusedInput('username')}
+                onBlur={() => setFocusedInput('')}
+                className={`input-field ${focusedInput === 'username' ? 'focused' : ''} ${fieldErrors.username ? 'field-error' : ''}`}
+              />
             </div>
+            {fieldErrors.username && <div className="field-error-text">❌ {fieldErrors.username}</div>}
+
             <div className="input-group">
               <span className="input-icon">🔒</span>
-              <input type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} onFocus={() => setFocusedInput('password')} onBlur={() => setFocusedInput('')} className={`input-field ${focusedInput === 'password' ? 'focused' : ''}`} required />
+              <input
+                type={showPassword ? 'text' : 'password'}
+                placeholder="Password"
+                value={password}
+                onChange={(e) => { setPassword(e.target.value); setFieldErrors(prev => ({ ...prev, password: '' })); }}
+                onFocus={() => setFocusedInput('password')}
+                onBlur={() => setFocusedInput('')}
+                className={`input-field ${focusedInput === 'password' ? 'focused' : ''} ${fieldErrors.password ? 'field-error' : ''}`}
+              />
+              <button type="button" className="password-toggle-btn" onClick={() => setShowPassword(!showPassword)} tabIndex={-1}>
+                {showPassword ? '🙈 Hide' : '👁 Show'}
+              </button>
             </div>
+            {fieldErrors.password && <div className="field-error-text">❌ {fieldErrors.password}</div>}
+
+            {!isLogin && password && (
+              <>
+                <div className="strength-bar-wrap">
+                  <div className={`strength-bar ${passwordStrength.level >= 1 ? `filled-${passwordStrength.label.toLowerCase()}` : ''}`}></div>
+                  <div className={`strength-bar ${passwordStrength.level >= 2 ? `filled-${passwordStrength.label.toLowerCase()}` : ''}`}></div>
+                  <div className={`strength-bar ${passwordStrength.level >= 3 ? `filled-${passwordStrength.label.toLowerCase()}` : ''}`}></div>
+                </div>
+                <div className={`strength-label ${passwordStrength.label.toLowerCase()}`}>
+                  Password Strength: {passwordStrength.label}
+                </div>
+              </>
+            )}
+
+            {isLogin && (
+              <div className="form-row">
+                <label className="remember-me">
+                  <input type="checkbox" checked={rememberMe} onChange={(e) => setRememberMe(e.target.checked)} />
+                  Remember Me
+                </label>
+                <button type="button" className="forgot-link" onClick={handleForgotPassword}>Forgot Password?</button>
+              </div>
+            )}
+
             <button type="submit" className="submit-btn" disabled={loading}>
               {loading && <span className="spinner"></span>}
               {loading ? 'Please wait...' : (isLogin ? '🚀 Login' : '✨ Create Account')}
             </button>
           </form>
+          {forgotMsg && <div className="forgot-msg">{forgotMsg}</div>}
           {message && <div className={`message ${isError ? 'error' : 'success'}`}>{message}</div>}
           <div className="divider"><div className="divider-line"></div><span className="divider-text">or</span><div className="divider-line"></div></div>
           <p className="footer-text">
             {isLogin ? "New here? " : "Already have an account? "}
-            <span className="footer-link" onClick={() => { setIsLogin(!isLogin); setMessage(''); }}>
+            <span className="footer-link" onClick={() => { setIsLogin(!isLogin); setMessage(''); setForgotMsg(''); setFieldErrors({ username: '', password: '' }); }}>
               {isLogin ? 'Create an account →' : '← Back to Login'}
             </span>
           </p>
