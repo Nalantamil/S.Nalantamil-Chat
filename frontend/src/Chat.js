@@ -73,6 +73,13 @@ function Chat({ username, onLogout }) {
 
   const REACTIONS = ['👍', '❤️', '😂', '😮', '😢'];
 
+  // ===== MOBILE: default sidebar closed =====
+  useEffect(() => {
+    if (window.innerWidth <= 768) {
+      setSidebarOpen(false);
+    }
+  }, []);
+
   // ===== TAB FOCUS =====
   useEffect(() => {
     const onFocus = () => { setIsTabFocused(true); setUnreadCount(0); };
@@ -458,6 +465,8 @@ function Chat({ username, onLogout }) {
         .sidebar-toggle { background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.12); color: white; width: 34px; height: 34px; border-radius: 10px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 16px; transition: all 0.3s ease; flex-shrink: 0; }
         .sidebar-toggle:hover { background: rgba(255,255,255,0.15); transform: scale(1.05); }
 
+        .mobile-menu-btn { display: none; }
+
         .chat-header-avatar { width: 42px; height: 42px; border-radius: 12px; background: linear-gradient(135deg, #667eea, #764ba2); display: flex; align-items: center; justify-content: center; font-size: 20px; }
         .chat-header-info { flex: 1; }
         .chat-header-name { font-size: 16px; font-weight: 700; color: white; }
@@ -647,50 +656,108 @@ function Chat({ username, onLogout }) {
         .profile-save-btn:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
         .profile-msg { text-align: center; font-size: 13px; margin-top: 12px; color: rgba(255,255,255,0.7); }
 
-        @media (max-width: 768px) {
-        .chat-layout { flex-direction: column; }
+        /* ===== RECONNECTING UI ===== */
+        .connection-banner {
+          position: fixed;
+          top: 0; left: 0; right: 0;
+          z-index: 99999;
+          padding: 10px 20px;
+          display: flex; align-items: center; justify-content: center;
+          gap: 10px;
+          font-size: 13px; font-weight: 600;
+          animation: slideDown 0.3s ease;
+        }
 
-        /* SIDEBAR → TOP NAV ON MOBILE */
+        .connection-banner.reconnecting {
+          background: linear-gradient(135deg, #e67e22, #d35400);
+          color: white;
+        }
+
+        .connection-banner.connected {
+          background: linear-gradient(135deg, #27ae60, #2ecc71);
+          color: white;
+        }
+
+        @keyframes spin {
+          to { transform: rotate(360deg); }
+        }
+
+        .reconnect-spinner {
+          width: 14px; height: 14px;
+          border: 2px solid rgba(255,255,255,0.3);
+          border-top-color: white;
+          border-radius: 50%;
+          animation: spin 0.8s linear infinite;
+          flex-shrink: 0;
+        }
+
+        .reconnect-dot {
+          width: 8px; height: 8px;
+          background: white;
+          border-radius: 50%;
+          flex-shrink: 0;
+        }
+
+        /* ===== SIDEBAR BACKDROP (mobile drawer) ===== */
+        .sidebar-backdrop { display: none; }
+
+        @media (max-width: 768px) {
+        .chat-layout { flex-direction: column; position: relative; }
+
+        /* SIDEBAR → SLIDE-OUT DRAWER ON MOBILE */
         .sidebar {
-          width: 100% !important;
-          min-width: 100% !important;
-          height: auto !important;
+          position: fixed !important;
+          top: 0 !important;
+          left: 0 !important;
+          height: 100vh !important;
+          width: 280px !important;
+          min-width: 280px !important;
+          max-width: 82vw !important;
+          z-index: 2000 !important;
+          background: rgba(10,10,25,0.98) !important;
+          transform: translateX(${sidebarOpen ? '0' : '-100%'}) !important;
+          transition: transform 0.3s ease !important;
           opacity: 1 !important;
-          border-right: none;
-          border-bottom: 1px solid rgba(255,255,255,0.07);
           flex-direction: column !important;
           padding: 0 !important;
-          overflow: visible !important;
+          overflow-y: auto !important;
+          box-shadow: ${sidebarOpen ? '10px 0 40px rgba(0,0,0,0.5)' : 'none'} !important;
+          border-right: 1px solid rgba(255,255,255,0.08) !important;
+        }
+
+        .sidebar-backdrop {
+          display: ${sidebarOpen ? 'block' : 'none'};
+          position: fixed;
+          top: 0; left: 0; right: 0; bottom: 0;
+          background: rgba(0,0,0,0.55);
+          z-index: 1999;
+          animation: fadeIn 0.2s ease;
+          backdrop-filter: blur(2px);
         }
 
         .sidebar-logo {
-          padding: 10px 16px !important;
-          border-bottom: none !important;
+          padding: 20px 20px 16px !important;
+          border-bottom: 1px solid rgba(255,255,255,0.07) !important;
           display: flex;
           align-items: center;
         }
 
-        .logo-emoji { font-size: 20px !important; }
-        .logo-name { font-size: 16px !important; letter-spacing: 1px !important; }
+        .logo-emoji { font-size: 24px !important; }
+        .logo-name { font-size: 18px !important; letter-spacing: 1px !important; }
 
-        .sidebar-section-title { display: none !important; }
-        .room-item { display: none !important; }
-        .sidebar-spacer { display: none !important; }
+        .sidebar-section-title { display: block !important; }
+        .room-item { display: flex !important; }
+        .sidebar-spacer { display: block !important; }
 
         .sidebar-user {
-          border-top: none !important;
-          padding: 8px 16px !important;
+          border-top: 1px solid rgba(255,255,255,0.07) !important;
+          padding: 14px 16px !important;
           background: rgba(0,0,0,0.2);
           gap: 8px !important;
         }
 
-        .user-avatar { width: 32px !important; height: 32px !important; font-size: 13px !important; }
-        .user-name { font-size: 13px !important; }
-        .user-status { font-size: 10px !important; }
-        .icon-btn { width: 30px !important; height: 30px !important; font-size: 13px !important; }
-
-        /* CHAT MAIN */
-        .chat-main { flex: 1; height: calc(100vh - 110px); }
+        /* CHAT MAIN — full height, drawer overlays instead of pushing */
+        .chat-main { flex: 1; height: 100vh; }
 
         .chat-header {
           padding: 10px 12px !important;
@@ -699,6 +766,21 @@ function Chat({ username, onLogout }) {
         }
 
         .sidebar-toggle { display: none !important; }
+
+        .mobile-menu-btn {
+          display: flex !important;
+          background: rgba(255,255,255,0.08);
+          border: 1px solid rgba(255,255,255,0.12);
+          color: white;
+          width: 34px; height: 34px;
+          border-radius: 10px;
+          align-items: center;
+          justify-content: center;
+          font-size: 17px;
+          cursor: pointer;
+          flex-shrink: 0;
+        }
+        .mobile-menu-btn:hover { background: rgba(255,255,255,0.15); }
 
         .chat-header-avatar {
           width: 32px !important;
@@ -812,48 +894,6 @@ function Chat({ username, onLogout }) {
           .file-msg-name { font-size: 13px; font-weight: 600; color: white; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
           .file-msg-action { font-size: 11px; color: rgba(255,255,255,0.4); margin-top: 2px; }
 
-        /* ===== RECONNECTING UI ===== */
-        .connection-banner {
-          position: fixed;
-          top: 0; left: 0; right: 0;
-          z-index: 99999;
-          padding: 10px 20px;
-          display: flex; align-items: center; justify-content: center;
-          gap: 10px;
-          font-size: 13px; font-weight: 600;
-          animation: slideDown 0.3s ease;
-        }
-
-        .connection-banner.reconnecting {
-          background: linear-gradient(135deg, #e67e22, #d35400);
-          color: white;
-        }
-
-        .connection-banner.connected {
-          background: linear-gradient(135deg, #27ae60, #2ecc71);
-          color: white;
-        }
-
-        @keyframes spin {
-          to { transform: rotate(360deg); }
-        }
-
-        .reconnect-spinner {
-          width: 14px; height: 14px;
-          border: 2px solid rgba(255,255,255,0.3);
-          border-top-color: white;
-          border-radius: 50%;
-          animation: spin 0.8s linear infinite;
-          flex-shrink: 0;
-        }
-
-        .reconnect-dot {
-          width: 8px; height: 8px;
-          background: white;
-          border-radius: 50%;
-          flex-shrink: 0;
-        }
-
       `}</style>
 
       {/* DRAG OVERLAY */}
@@ -960,6 +1000,9 @@ function Chat({ username, onLogout }) {
       )}
 
       <div className="chat-layout">
+        {/* SIDEBAR BACKDROP (mobile only, closes drawer on tap) */}
+        <div className="sidebar-backdrop" onClick={() => setSidebarOpen(false)}></div>
+
         {/* SIDEBAR */}
         <div className="sidebar">
           <div className="sidebar-logo">
@@ -969,7 +1012,7 @@ function Chat({ username, onLogout }) {
             </div>
           </div>
           <div className="sidebar-section-title">Channels</div>
-          <div className="room-item">
+          <div className="room-item" onClick={() => setSidebarOpen(false)}>
             <span className="room-icon">🌐</span>
             <div className="room-info">
               <div className="room-name"># general</div>
@@ -1002,6 +1045,9 @@ function Chat({ username, onLogout }) {
           <div className="chat-header">
             <button className="sidebar-toggle ripple-btn" onClick={() => setSidebarOpen(!sidebarOpen)}>
               {sidebarOpen ? '◀' : '▶'}
+            </button>
+            <button className="mobile-menu-btn ripple-btn" onClick={() => setSidebarOpen(!sidebarOpen)} title="Menu">
+              ☰
             </button>
             <div className="chat-header-avatar">🌐</div>
             <div className="chat-header-info">
