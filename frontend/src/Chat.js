@@ -4,7 +4,12 @@ import axios from 'axios';
 
 const socket = io('https://s-nalantamil-chat.onrender.com', {
   transports: ['websocket'],
-  upgrade: false
+  upgrade: false,
+  reconnection: true,
+  reconnectionAttempts: Infinity,
+  reconnectionDelay: 1000,
+  reconnectionDelayMax: 5000,
+  timeout: 20000,
 });
 
 const BACKGROUNDS = [
@@ -75,6 +80,18 @@ function Chat({ username, onLogout }) {
     return () => { window.removeEventListener('focus', onFocus); window.removeEventListener('blur', onBlur); };
   }, []);
 
+  // ===== KEEP BACKEND ALIVE =====
+  useEffect(() => {
+    const wakeUp = async () => {
+      try {
+        await axios.get('https://s-nalantamil-chat.onrender.com/');
+      } catch (err) {}
+    };
+    wakeUp(); // wake up immediately on load
+    const interval = setInterval(wakeUp, 4 * 60 * 1000); // every 4 minutes
+    return () => clearInterval(interval);
+  }, []);
+
   // ===== DATE HELPERS =====
   const getDateLabel = (timestamp) => {
     if (!timestamp) return '';
@@ -105,6 +122,14 @@ function Chat({ username, onLogout }) {
     }).catch(() => {});
 
     socket.emit('join', { username });
+
+    socket.on('connect', () => {
+      socket.emit('join', { username });
+    });
+
+    socket.on('disconnect', () => {
+      console.log('Disconnected — attempting reconnect...');
+    });
 
     socket.on('message', (msg) => {
       setMessages(prev => [...prev, { ...msg, reactions: {} }]);
