@@ -61,6 +61,8 @@ function Chat({ username, onLogout }) {
   const [profileEdit, setProfileEdit] = useState({ bio: '', avatar_color: '#667eea', avatar_url: '', current_password: '', new_password: '' });
   const [profileSaving, setProfileSaving] = useState(false);
   const [profileMsg, setProfileMsg] = useState('');
+  const [isConnected, setIsConnected] = useState(false);
+  const [isReconnecting, setIsReconnecting] = useState(false);
 
   const messagesEndRef = useRef(null);
   const typingTimeoutRef = useRef(null);
@@ -124,11 +126,24 @@ function Chat({ username, onLogout }) {
     socket.emit('join', { username });
 
     socket.on('connect', () => {
+      setIsConnected(true);
+      setIsReconnecting(false);
       socket.emit('join', { username });
     });
 
     socket.on('disconnect', () => {
-      console.log('Disconnected — attempting reconnect...');
+      setIsConnected(false);
+      setIsReconnecting(true);
+    });
+
+    socket.on('reconnect_attempt', () => {
+      setIsReconnecting(true);
+    });
+
+    socket.on('reconnect', () => {
+      setIsConnected(true);
+      setIsReconnecting(false);
+      socket.emit('join', { username });
     });
 
     socket.on('message', (msg) => {
@@ -147,6 +162,10 @@ function Chat({ username, onLogout }) {
       socket.off('message'); socket.off('message_deleted'); socket.off('message_edited');
       socket.off('reaction_updated'); socket.off('user_typing'); socket.off('user_stop_typing');
       socket.off('message_pinned'); socket.off('message_unpinned');
+      socket.off('connect');
+      socket.off('disconnect');
+      socket.off('reconnect_attempt');
+      socket.off('reconnect');
     };
   }, [username, isTabFocused]);
 
@@ -793,6 +812,48 @@ function Chat({ username, onLogout }) {
           .file-msg-name { font-size: 13px; font-weight: 600; color: white; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
           .file-msg-action { font-size: 11px; color: rgba(255,255,255,0.4); margin-top: 2px; }
 
+        /* ===== RECONNECTING UI ===== */
+        .connection-banner {
+          position: fixed;
+          top: 0; left: 0; right: 0;
+          z-index: 99999;
+          padding: 10px 20px;
+          display: flex; align-items: center; justify-content: center;
+          gap: 10px;
+          font-size: 13px; font-weight: 600;
+          animation: slideDown 0.3s ease;
+        }
+
+        .connection-banner.reconnecting {
+          background: linear-gradient(135deg, #e67e22, #d35400);
+          color: white;
+        }
+
+        .connection-banner.connected {
+          background: linear-gradient(135deg, #27ae60, #2ecc71);
+          color: white;
+        }
+
+        @keyframes spin {
+          to { transform: rotate(360deg); }
+        }
+
+        .reconnect-spinner {
+          width: 14px; height: 14px;
+          border: 2px solid rgba(255,255,255,0.3);
+          border-top-color: white;
+          border-radius: 50%;
+          animation: spin 0.8s linear infinite;
+          flex-shrink: 0;
+        }
+
+        .reconnect-dot {
+          width: 8px; height: 8px;
+          background: white;
+          border-radius: 50%;
+          flex-shrink: 0;
+        }
+
       `}</style>
 
       {/* DRAG OVERLAY */}
@@ -801,6 +862,24 @@ function Chat({ username, onLogout }) {
           <span className="drag-overlay-icon">📸</span>
           <div className="drag-overlay-text">Drop image to send</div>
           <div className="drag-overlay-sub">Supports JPG, PNG, GIF, WebP</div>
+        </div>
+      )}
+
+      {/* CONNECTION BANNER */}
+      {isReconnecting && (
+        <div className="connection-banner reconnecting">
+          <div className="reconnect-spinner"></div>
+          <span>Reconnecting to server... Please wait</span>
+        </div>
+      )}
+      {!isReconnecting && isConnected && (
+        <div className="connection-banner connected" 
+          style={{ animation: 'slideDown 0.3s ease' }}
+          ref={(el) => {
+            if (el) setTimeout(() => el.style.display = 'none', 3000);
+          }}>
+          <div className="reconnect-dot"></div>
+          <span>✅ Connected successfully!</span>
         </div>
       )}
 
@@ -1190,8 +1269,17 @@ function Chat({ username, onLogout }) {
               <button type="button" className={`emoji-btn ${showEmojiPicker ? 'active' : ''}`} onClick={() => setShowEmojiPicker(!showEmojiPicker)}>😊</button>
               <button type="button" className="img-upload-btn" onClick={() => fileInputRef.current?.click()}>📷</button>
               <input ref={fileInputRef} type="file" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip,.rar,.txt" style={{ display: 'none' }} onChange={handleFileInput} />
-              <input className="msg-input" type="text" placeholder={imageFile ? 'Add a caption... (optional)' : 'Message #general...'} value={input} onChange={handleInputChange} />
-              <button type="submit" className="send-btn ripple-btn" disabled={uploading}>{uploading ? '⏳' : '➤'}</button>
+              <input 
+                className="msg-input" 
+                type="text" 
+                placeholder={!isConnected ? '⚠️ Reconnecting...' : imageFile ? 'Add a caption... (optional)' : 'Message #general...'} 
+                value={input} 
+                onChange={handleInputChange}
+                disabled={!isConnected}
+              />
+              <button type="submit" className="send-btn ripple-btn" disabled={uploading || !isConnected}>
+                {uploading ? '⏳' : !isConnected ? '⚡' : '➤'}
+              </button>
             </form>
           </div>
         </div>
