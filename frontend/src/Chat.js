@@ -90,7 +90,11 @@ function Chat({ username, onLogout }) {
   const REACTIONS = ['👍', '❤️', '😂', '😮', '😢'];
 
   const currentRoomId = activeRoom === 'general' ? 'general' : getDMRoomId(username, activeDMUser);
-  const currentMessages = activeRoom === 'general' ? messages : (dmMessages[currentRoomId] || []);
+  const currentMessages = useMemo(() => {
+  return activeRoom === "general"
+    ? messages
+    : (dmMessages[currentRoomId] || []);
+}, [activeRoom, messages, dmMessages, currentRoomId]);
 
   // ===== SORTED DM USERS (WhatsApp-style) =====
   const sortedUsers = [...allUsers].sort((a, b) => {
