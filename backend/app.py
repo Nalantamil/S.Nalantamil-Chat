@@ -1,6 +1,6 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-from flask_socketio import SocketIO, emit
+from flask_socketio import SocketIO, emit, join_room
 from pymongo import MongoClient
 import bcrypt
 import jwt
@@ -8,17 +8,17 @@ import datetime
 import threading
 import requests
 import time
+import os
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'your-secret-key-change-later'
-CORS(app, 
-     resources={r"/*": {"origins": "*"}}, 
+CORS(app,
+     resources={r"/*": {"origins": "*"}},
      allow_headers=["Content-Type", "Authorization"],
      methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"]
 )
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading', ping_timeout=60, ping_interval=25)
 
-import os
 client = MongoClient(os.environ.get("MONGODB_URI", "mongodb+srv://tamilsundhar:NalantamilMDB31@cluster0.pse786b.mongodb.net/chatapp"))
 db = client["chatapp"]
 users_collection = db["users"]
@@ -40,7 +40,13 @@ def signup():
     if existing_user:
         return jsonify({"error": "Username already exists"}), 400
     hashed_pw = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
-    users_collection.insert_one({"username": username, "password": hashed_pw})
+    users_collection.insert_one({
+        "username": username,
+        "password": hashed_pw,
+        "bio": "",
+        "avatar_color": "#667eea",
+        "avatar_url": ""
+    })
     return jsonify({"message": "Signup successful"}), 201
 
 @app.route('/login', methods=['POST'])
@@ -59,9 +65,20 @@ def login():
     }, app.config['SECRET_KEY'], algorithm="HS256")
     return jsonify({"message": "Login successful", "token": token}), 200
 
+# ---------- GENERAL CHANNEL MESSAGES ----------
+# FIX: only return messages that belong to the general channel.
+# Old query had no filter at all, so every DM (stored in the same
+# collection) leaked into the general channel on every page load.
 @app.route('/messages', methods=['GET'])
 def get_messages():
-    msgs = list(messages_collection.find().sort('timestamp', 1).limit(50))
+    msgs = list(
+        messages_collection.find({
+            '$or': [
+                {'room_id': 'general'},
+                {'room_id': {'$exists': False}}  # legacy rows saved before room_id existed
+            ]
+        }).sort('timestamp', 1).limit(50)
+    )
     for msg in msgs:
         msg['_id'] = str(msg['_id'])
     return jsonify(msgs), 200
@@ -91,6 +108,7 @@ def get_users():
     return jsonify(users), 200
 
 # ---------- DM MESSAGES ----------
+# Already correctly filtered by room_id — no change needed here.
 @app.route('/dm/<room_id>', methods=['GET'])
 def get_dm_messages(room_id):
     msgs = list(messages_collection.find({'room_id': room_id}).sort('timestamp', 1).limit(100))
@@ -202,6 +220,11 @@ online_users = []
 @socketio.on('join')
 def handle_join(data):
     username = data['username']
+    # FIX: put this connection into a private room keyed by the
+    # user's own name. This lets us target DMs to exactly the two
+    # participants instead of broadcasting to every connected client.
+    join_room(username)
+
     if username not in online_users:
         online_users.append(username)
         emit('message', {
@@ -290,6 +313,12 @@ def handle_reaction(data):
         'reactions': reactions
     }, broadcast=True)
 
+# ---------- DIRECT MESSAGES ----------
+# FIX: previously used broadcast=True, which sent every private
+# message to every connected user (not just the two people in the
+# conversation). Now we deliver only to the two participants' own
+# rooms (joined above in handle_join), so the "chat lock" password
+# gate is actually meaningful — other users never receive the data.
 @socketio.on('send_dm')
 def handle_dm(data):
     room_id = data.get('room_id')
@@ -304,7 +333,10 @@ def handle_dm(data):
     }
     result = messages_collection.insert_one(message)
     message['_id'] = str(result.inserted_id)
-    emit('dm_message', message, broadcast=True)    
+
+    participants = room_id.split('__dm__') if room_id else []
+    for participant in participants:
+        emit('dm_message', message, room=participant)
 
 @socketio.on('pin_message')
 def handle_pin(data):
