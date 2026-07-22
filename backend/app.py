@@ -82,6 +82,58 @@ def edit_message(message_id):
     )
     return jsonify({"message": "Updated"}), 200
 
+# ---------- USERS ----------
+@app.route('/users', methods=['GET'])
+def get_users():
+    users = list(users_collection.find({}, {'password': 0}))
+    for u in users:
+        u['_id'] = str(u['_id'])
+    return jsonify(users), 200
+
+# ---------- DM MESSAGES ----------
+@app.route('/dm/<room_id>', methods=['GET'])
+def get_dm_messages(room_id):
+    msgs = list(messages_collection.find({'room_id': room_id}).sort('timestamp', 1).limit(100))
+    for msg in msgs:
+        msg['_id'] = str(msg['_id'])
+    return jsonify(msgs), 200
+
+# ---------- CHAT LOCK ----------
+@app.route('/chatlock/<room_id>', methods=['GET'])
+def get_chat_lock(room_id):
+    lock = db['chatlocks'].find_one({'room_id': room_id})
+    if lock:
+        return jsonify({'locked': True, 'set_by': lock['set_by']}), 200
+    return jsonify({'locked': False}), 200
+
+@app.route('/chatlock/<room_id>', methods=['POST'])
+def set_chat_lock(room_id):
+    data = request.json
+    password = data.get('password')
+    set_by = data.get('set_by')
+    hashed = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
+    db['chatlocks'].update_one(
+        {'room_id': room_id},
+        {'$set': {'room_id': room_id, 'password': hashed, 'set_by': set_by}},
+        upsert=True
+    )
+    return jsonify({'message': 'Lock set'}), 200
+
+@app.route('/chatlock/<room_id>/verify', methods=['POST'])
+def verify_chat_lock(room_id):
+    data = request.json
+    password = data.get('password')
+    lock = db['chatlocks'].find_one({'room_id': room_id})
+    if not lock:
+        return jsonify({'valid': True}), 200
+    valid = bcrypt.checkpw(password.encode('utf-8'), lock['password'])
+    return jsonify({'valid': valid}), 200
+
+@app.route('/chatlock/<room_id>', methods=['DELETE'])
+def remove_chat_lock(room_id):
+    db['chatlocks'].delete_one({'room_id': room_id})
+    return jsonify({'message': 'Lock removed'}), 200
+
 # ---------- PROFILE ----------
 @app.route('/profile/<username>', methods=['GET', 'OPTIONS'])
 def get_profile(username):
@@ -161,13 +213,15 @@ def handle_join(data):
 
 @socketio.on('send_message')
 def handle_message(data):
+    room_id = data.get('room_id', 'general')
     message = {
         'username': data['username'],
         'text': data['text'],
         'type': 'user',
         'timestamp': str(datetime.datetime.utcnow()),
         'edited': False,
-        'reply_to': data.get('reply_to', None)
+        'reply_to': data.get('reply_to', None),
+        'room_id': room_id
     }
     result = messages_collection.insert_one(message)
     message['_id'] = str(result.inserted_id)
@@ -235,6 +289,22 @@ def handle_reaction(data):
         'message_id': message_id,
         'reactions': reactions
     }, broadcast=True)
+
+@socketio.on('send_dm')
+def handle_dm(data):
+    room_id = data.get('room_id')
+    message = {
+        'username': data['username'],
+        'text': data['text'],
+        'type': 'user',
+        'timestamp': str(datetime.datetime.utcnow()),
+        'edited': False,
+        'reply_to': data.get('reply_to', None),
+        'room_id': room_id
+    }
+    result = messages_collection.insert_one(message)
+    message['_id'] = str(result.inserted_id)
+    emit('dm_message', message, broadcast=True)    
 
 @socketio.on('pin_message')
 def handle_pin(data):
