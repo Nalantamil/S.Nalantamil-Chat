@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { io } from 'socket.io-client';
 import axios from 'axios';
 
@@ -36,9 +36,7 @@ const EMOJI_LIST = [
 
 const AVATAR_COLORS = ['#667eea','#e74c3c','#2ecc71','#f39c12','#e91e63','#00bcd4','#9c27b0','#ff5722'];
 
-const getDMRoomId = (user1, user2) => {
-  return [user1, user2].sort().join('__dm__');
-};
+const getDMRoomId = (user1, user2) => [user1, user2].sort().join('__dm__');
 
 function Chat({ username, onLogout }) {
   const [messages, setMessages] = useState([]);
@@ -69,8 +67,6 @@ function Chat({ username, onLogout }) {
   const [isConnected, setIsConnected] = useState(false);
   const [isReconnecting, setIsReconnecting] = useState(false);
   const [showConnected, setShowConnected] = useState(false);
-
-  // ===== DM STATES =====
   const [allUsers, setAllUsers] = useState([]);
   const [activeRoom, setActiveRoom] = useState('general');
   const [activeDMUser, setActiveDMUser] = useState(null);
@@ -82,6 +78,9 @@ function Chat({ username, onLogout }) {
   const [lockedRooms, setLockedRooms] = useState({});
   const [unreadDMs, setUnreadDMs] = useState({});
 
+  // ===== NEW: DM SORT TRACKING =====
+  const [dmLastMessage, setDmLastMessage] = useState({});
+
   const messagesEndRef = useRef(null);
   const typingTimeoutRef = useRef(null);
   const searchInputRef = useRef(null);
@@ -90,11 +89,17 @@ function Chat({ username, onLogout }) {
   const REACTIONS = ['👍', '❤️', '😂', '😮', '😢'];
 
   const currentRoomId = activeRoom === 'general' ? 'general' : getDMRoomId(username, activeDMUser);
-  const currentMessages = useMemo(() => {
-    return activeRoom === 'general' ? messages : (dmMessages[currentRoomId] || []);
-  }, [activeRoom, messages, dmMessages, currentRoomId]);
+  const currentMessages = activeRoom === 'general' ? messages : (dmMessages[currentRoomId] || []);
 
-  // ===== TAB FOCUS =====
+  // ===== SORTED DM USERS (WhatsApp-style) =====
+  const sortedUsers = [...allUsers].sort((a, b) => {
+    const roomA = getDMRoomId(username, a.username);
+    const roomB = getDMRoomId(username, b.username);
+    const timeA = dmLastMessage[roomA] || 0;
+    const timeB = dmLastMessage[roomB] || 0;
+    return timeB - timeA;
+  });
+
   useEffect(() => {
     const onFocus = () => { setIsTabFocused(true); setUnreadCount(0); };
     const onBlur = () => setIsTabFocused(false);
@@ -103,7 +108,6 @@ function Chat({ username, onLogout }) {
     return () => { window.removeEventListener('focus', onFocus); window.removeEventListener('blur', onBlur); };
   }, []);
 
-  // ===== KEEP BACKEND ALIVE =====
   useEffect(() => {
     const wakeUp = async () => {
       try { await axios.get('https://s-nalantamil-chat.onrender.com/'); } catch (err) {}
@@ -113,7 +117,6 @@ function Chat({ username, onLogout }) {
     return () => clearInterval(interval);
   }, []);
 
-  // ===== DATE HELPERS =====
   const getDateLabel = (timestamp) => {
     if (!timestamp) return '';
     const date = new Date(timestamp + 'Z');
@@ -133,15 +136,19 @@ function Chat({ username, onLogout }) {
     return new Date(prev.timestamp + 'Z').toDateString() !== new Date(curr.timestamp + 'Z').toDateString();
   };
 
-  // ===== FETCH DM MESSAGES =====
   const fetchDMMessages = async (roomId) => {
     try {
       const res = await axios.get(`https://s-nalantamil-chat.onrender.com/dm/${roomId}`);
       setDmMessages(prev => ({ ...prev, [roomId]: res.data }));
+      // Update last message timestamp for sorting
+      if (res.data.length > 0) {
+        const lastMsg = res.data[res.data.length - 1];
+        const ts = lastMsg.timestamp ? new Date(lastMsg.timestamp + 'Z').getTime() : 0;
+        setDmLastMessage(prev => ({ ...prev, [roomId]: ts }));
+      }
     } catch (err) {}
   };
 
-  // ===== CHECK CHAT LOCK =====
   const checkChatLock = async (roomId) => {
     try {
       const res = await axios.get(`https://s-nalantamil-chat.onrender.com/chatlock/${roomId}`);
@@ -150,25 +157,37 @@ function Chat({ username, onLogout }) {
     } catch (err) { return { locked: false }; }
   };
 
-  // ===== OPEN DM =====
   const openDM = async (targetUser) => {
     const roomId = getDMRoomId(username, targetUser);
     const lock = await checkChatLock(roomId);
-
     if (lock.locked && !lockedRooms[roomId]) {
       setActiveDMUser(targetUser);
       setActiveRoom('dm');
       setShowLockModal('verify');
       return;
     }
-
     setActiveDMUser(targetUser);
     setActiveRoom('dm');
     await fetchDMMessages(roomId);
     setUnreadDMs(prev => ({ ...prev, [roomId]: 0 }));
   };
 
-  // ===== MAIN SOCKET EFFECT =====
+  // ===== PRELOAD DM LAST MESSAGES FOR SORTING =====
+  useEffect(() => {
+    if (allUsers.length === 0) return;
+    allUsers.forEach(async (user) => {
+      const roomId = getDMRoomId(username, user.username);
+      try {
+        const res = await axios.get(`https://s-nalantamil-chat.onrender.com/dm/${roomId}`);
+        if (res.data.length > 0) {
+          const lastMsg = res.data[res.data.length - 1];
+          const ts = lastMsg.timestamp ? new Date(lastMsg.timestamp + 'Z').getTime() : 0;
+          setDmLastMessage(prev => ({ ...prev, [roomId]: ts }));
+        }
+      } catch (err) {}
+    });
+  }, [allUsers, username]);
+
   useEffect(() => {
     axios.get('https://s-nalantamil-chat.onrender.com/messages').then(res => setMessages(res.data));
     axios.get('https://s-nalantamil-chat.onrender.com/pinned').then(res => setPinnedMessages(res.data)).catch(() => {});
@@ -190,13 +209,8 @@ function Chat({ username, onLogout }) {
       socket.emit('join', { username });
     });
 
-    socket.on('disconnect', () => {
-      setIsConnected(false);
-      setIsReconnecting(true);
-    });
-
+    socket.on('disconnect', () => { setIsConnected(false); setIsReconnecting(true); });
     socket.on('reconnect_attempt', () => setIsReconnecting(true));
-
     socket.on('reconnect', () => {
       setIsConnected(true);
       setIsReconnecting(false);
@@ -216,6 +230,10 @@ function Chat({ username, onLogout }) {
         ...prev,
         [roomId]: [...(prev[roomId] || []), { ...msg, reactions: {} }]
       }));
+      // ===== UPDATE LAST MESSAGE FOR SORTING =====
+      const ts = msg.timestamp ? new Date(msg.timestamp + 'Z').getTime() : Date.now();
+      setDmLastMessage(prev => ({ ...prev, [roomId]: ts }));
+
       const dmUsers = roomId.split('__dm__');
       const otherUser = dmUsers.find(u => u !== username);
       if (otherUser && otherUser !== activeDMUser) {
@@ -227,9 +245,7 @@ function Chat({ username, onLogout }) {
       setMessages(prev => prev.filter(m => m._id !== message_id));
       setDmMessages(prev => {
         const updated = {};
-        Object.keys(prev).forEach(roomId => {
-          updated[roomId] = prev[roomId].filter(m => m._id !== message_id);
-        });
+        Object.keys(prev).forEach(r => { updated[r] = prev[r].filter(m => m._id !== message_id); });
         return updated;
       });
     });
@@ -238,9 +254,7 @@ function Chat({ username, onLogout }) {
       setMessages(prev => prev.map(m => m._id === message_id ? { ...m, text, edited: true } : m));
       setDmMessages(prev => {
         const updated = {};
-        Object.keys(prev).forEach(roomId => {
-          updated[roomId] = prev[roomId].map(m => m._id === message_id ? { ...m, text, edited: true } : m);
-        });
+        Object.keys(prev).forEach(r => { updated[r] = prev[r].map(m => m._id === message_id ? { ...m, text, edited: true } : m); });
         return updated;
       });
     });
@@ -249,9 +263,7 @@ function Chat({ username, onLogout }) {
       setMessages(prev => prev.map(m => m._id === message_id ? { ...m, reactions } : m));
       setDmMessages(prev => {
         const updated = {};
-        Object.keys(prev).forEach(roomId => {
-          updated[roomId] = prev[roomId].map(m => m._id === message_id ? { ...m, reactions } : m);
-        });
+        Object.keys(prev).forEach(r => { updated[r] = prev[r].map(m => m._id === message_id ? { ...m, reactions } : m); });
         return updated;
       });
     });
@@ -264,10 +276,9 @@ function Chat({ username, onLogout }) {
     return () => {
       socket.off('connect'); socket.off('disconnect'); socket.off('reconnect_attempt');
       socket.off('reconnect'); socket.off('message'); socket.off('dm_message');
-      socket.off('message_deleted'); socket.off('message_edited');
-      socket.off('reaction_updated'); socket.off('user_typing');
-      socket.off('user_stop_typing'); socket.off('message_pinned');
-      socket.off('message_unpinned');
+      socket.off('message_deleted'); socket.off('message_edited'); socket.off('reaction_updated');
+      socket.off('user_typing'); socket.off('user_stop_typing');
+      socket.off('message_pinned'); socket.off('message_unpinned');
     };
   }, [username, isTabFocused, activeDMUser]);
 
@@ -291,7 +302,6 @@ function Chat({ username, onLogout }) {
     }
   }, [showProfile, profile.bio, profile.avatar_color, profile.avatar_url]);
 
-  // ===== MESSAGE HANDLERS =====
   const handleInputChange = (e) => {
     setInput(e.target.value);
     if (e.target.value.trim()) {
@@ -307,7 +317,6 @@ function Chat({ username, onLogout }) {
     e.preventDefault();
     if (imageFile) { sendImageMessage(); return; }
     if (!input.trim()) return;
-
     if (activeRoom === 'general') {
       socket.emit('send_message', {
         username, text: input,
@@ -319,7 +328,6 @@ function Chat({ username, onLogout }) {
         reply_to: replyingTo ? { _id: replyingTo._id, username: replyingTo.username, text: replyingTo.text } : null
       });
     }
-
     socket.emit('stop_typing', { username });
     clearTimeout(typingTimeoutRef.current);
     setInput('');
@@ -336,7 +344,6 @@ function Chat({ username, onLogout }) {
   };
   const addReaction = (message_id, emoji) => socket.emit('add_reaction', { message_id, emoji, username });
 
-  // ===== PIN HANDLERS =====
   const pinMessage = async (msg) => {
     const pinData = { message_id: msg._id, text: msg.text, username: msg.username, pinned_by: username };
     await axios.post('https://s-nalantamil-chat.onrender.com/pinned', pinData);
@@ -348,7 +355,6 @@ function Chat({ username, onLogout }) {
   };
   const isPinned = (msg_id) => pinnedMessages.some(p => p.message_id === msg_id);
 
-  // ===== IMAGE/FILE UPLOAD =====
   const uploadToCloudinary = async (file) => {
     const formData = new FormData();
     formData.append('file', file);
@@ -365,18 +371,18 @@ function Chat({ username, onLogout }) {
 
   const getFileIcon = (file) => {
     if (!file) return '📎';
-    if (file.type.startsWith('image/')) return '🖼️';
+    if (file.type?.startsWith('image/')) return '🖼️';
     if (file.type === 'application/pdf') return '📄';
-    if (file.type.includes('word') || file.name?.endsWith('.docx')) return '📝';
-    if (file.type.includes('zip') || file.name?.endsWith('.zip')) return '🗜️';
-    if (file.type.includes('excel') || file.name?.endsWith('.xlsx')) return '📊';
+    if (file.type?.includes('word') || file.name?.endsWith('.docx')) return '📝';
+    if (file.type?.includes('zip') || file.name?.endsWith('.zip')) return '🗜️';
+    if (file.type?.includes('excel') || file.name?.endsWith('.xlsx')) return '📊';
     return '📎';
   };
 
   const handleImageSelect = (file) => {
     if (!file) return;
     setImageFile(file);
-    if (file.type.startsWith('image/')) {
+    if (file.type?.startsWith('image/')) {
       const reader = new FileReader();
       reader.onload = (e) => setImagePreview(e.target.result);
       reader.readAsDataURL(file);
@@ -386,7 +392,6 @@ function Chat({ username, onLogout }) {
   };
 
   const handleFileInput = (e) => handleImageSelect(e.target.files[0]);
-
   const cancelImage = () => {
     setImagePreview(null); setImageFile(null);
     if (fileInputRef.current) fileInputRef.current.value = '';
@@ -398,14 +403,11 @@ function Chat({ username, onLogout }) {
     try {
       const url = await uploadToCloudinary(imageFile);
       const caption = input.trim();
-      const isImage = imageFile.type.startsWith('image/');
-      const fileName = imageFile.name;
-      const fileIcon = getFileIcon(imageFile);
+      const isImage = imageFile.type?.startsWith('image/');
       const text = isImage
         ? `__IMAGE__${url}${caption ? `__CAPTION__${caption}` : ''}`
-        : `__FILE__${url}__FILENAME__${fileName}__FILEICON__${fileIcon}${caption ? `__CAPTION__${caption}` : ''}`;
+        : `__FILE__${url}__FILENAME__${imageFile.name}__FILEICON__${getFileIcon(imageFile)}${caption ? `__CAPTION__${caption}` : ''}`;
       const replyData = replyingTo ? { _id: replyingTo._id, username: replyingTo.username, text: replyingTo.text } : null;
-
       if (activeRoom === 'general') {
         socket.emit('send_message', { username, text, reply_to: replyData });
       } else {
@@ -427,7 +429,6 @@ function Chat({ username, onLogout }) {
     }
   };
 
-  // ===== PROFILE =====
   const saveProfile = async () => {
     setProfileSaving(true); setProfileMsg('');
     try {
@@ -443,13 +444,10 @@ function Chat({ username, onLogout }) {
     setProfileSaving(false);
   };
 
-  // ===== CHAT LOCK =====
   const setLock = async () => {
     if (!lockPassword.trim()) return;
     try {
-      await axios.post(`https://s-nalantamil-chat.onrender.com/chatlock/${currentRoomId}`, {
-        password: lockPassword, set_by: username
-      });
+      await axios.post(`https://s-nalantamil-chat.onrender.com/chatlock/${currentRoomId}`, { password: lockPassword, set_by: username });
       setChatLocks(prev => ({ ...prev, [currentRoomId]: { locked: true, set_by: username } }));
       setLockedRooms(prev => ({ ...prev, [currentRoomId]: true }));
       setLockPassword('');
@@ -460,17 +458,13 @@ function Chat({ username, onLogout }) {
 
   const verifyLock = async () => {
     try {
-      const res = await axios.post(`https://s-nalantamil-chat.onrender.com/chatlock/${currentRoomId}/verify`, {
-        password: lockVerifyPassword
-      });
+      const res = await axios.post(`https://s-nalantamil-chat.onrender.com/chatlock/${currentRoomId}/verify`, { password: lockVerifyPassword });
       if (res.data.valid) {
         setLockedRooms(prev => ({ ...prev, [currentRoomId]: true }));
         setLockVerifyPassword('');
         setShowLockModal(false);
         await fetchDMMessages(currentRoomId);
-      } else {
-        alert('❌ Wrong password!');
-      }
+      } else { alert('❌ Wrong password!'); }
     } catch (err) { alert('Failed to verify'); }
   };
 
@@ -482,17 +476,40 @@ function Chat({ username, onLogout }) {
     } catch (err) { alert('Failed to remove lock'); }
   };
 
-  // ===== HELPERS =====
   const formatTime = (timestamp) => {
     if (!timestamp) return '';
     return new Date(timestamp + 'Z').toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
   };
+
+  // ===== FORMAT LAST MESSAGE TIME FOR DM LIST =====
+  const formatLastMsgTime = (ts) => {
+    if (!ts) return '';
+    const date = new Date(ts);
+    const today = new Date();
+    const yesterday = new Date();
+    yesterday.setDate(today.getDate() - 1);
+    if (date.toDateString() === today.toDateString()) {
+      return date.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+    }
+    if (date.toDateString() === yesterday.toDateString()) return 'Yesterday';
+    return date.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+  };
+
   const getInitial = (name) => name ? name[0].toUpperCase() : '?';
   const filteredMessages = searchQuery.trim()
     ? currentMessages.filter(m => m.type !== 'system' && m.text?.toLowerCase().includes(searchQuery.toLowerCase()))
     : currentMessages;
-
   const totalUnreadDMs = Object.values(unreadDMs).reduce((a, b) => a + b, 0);
+
+  // ===== GET LAST MESSAGE PREVIEW FOR DM LIST =====
+  const getLastMsgPreview = (roomId) => {
+    const msgs = dmMessages[roomId];
+    if (!msgs || msgs.length === 0) return 'Click to chat';
+    const last = msgs[msgs.length - 1];
+    if (last.text?.startsWith('__IMAGE__')) return '🖼️ Image';
+    if (last.text?.startsWith('__FILE__')) return '📎 File';
+    return last.text?.length > 30 ? last.text.substring(0, 30) + '...' : last.text;
+  };
 
   return (
     <>
@@ -543,17 +560,15 @@ function Chat({ username, onLogout }) {
 
         .chat-layout { display: flex; height: 100vh; width: 100vw; font-family: 'Segoe UI', sans-serif; overflow: hidden; }
 
-        /* ===== CONNECTION BANNER ===== */
         .connection-banner { position: fixed; top: 0; left: 0; right: 0; z-index: 99999; padding: 10px 20px; display: flex; align-items: center; justify-content: center; gap: 10px; font-size: 13px; font-weight: 600; animation: slideDown 0.3s ease; }
         .connection-banner.reconnecting { background: linear-gradient(135deg, #e67e22, #d35400); color: white; }
         .connection-banner.connected { background: linear-gradient(135deg, #27ae60, #2ecc71); color: white; }
         .reconnect-spinner { width: 14px; height: 14px; border: 2px solid rgba(255,255,255,0.3); border-top-color: white; border-radius: 50%; animation: spin 0.8s linear infinite; flex-shrink: 0; }
         .reconnect-dot { width: 8px; height: 8px; background: white; border-radius: 50%; flex-shrink: 0; }
 
-        /* ===== SIDEBAR ===== */
         .sidebar {
-          width: ${sidebarOpen ? '260px' : '0px'};
-          min-width: ${sidebarOpen ? '260px' : '0px'};
+          width: ${sidebarOpen ? '280px' : '0px'};
+          min-width: ${sidebarOpen ? '280px' : '0px'};
           background: rgba(0,0,0,0.35);
           border-right: 1px solid rgba(255,255,255,0.07);
           display: flex; flex-direction: column;
@@ -562,311 +577,307 @@ function Chat({ username, onLogout }) {
           opacity: ${sidebarOpen ? '1' : '0'};
         }
 
-        .sidebar-logo { padding: 20px 24px 16px; border-bottom: 1px solid rgba(255,255,255,0.07); }
+        .sidebar-logo { padding: 20px 20px 14px; border-bottom: 1px solid rgba(255,255,255,0.07); }
         .logo-row { display: flex; align-items: center; gap: 10px; }
-        .logo-emoji { font-size: 26px; filter: drop-shadow(0 0 8px rgba(102,126,234,0.9)); transition: transform 0.3s ease; cursor: pointer; }
+        .logo-emoji { font-size: 24px; filter: drop-shadow(0 0 8px rgba(102,126,234,0.9)); cursor: pointer; transition: transform 0.3s; }
         .logo-emoji:hover { transform: scale(1.2) rotate(10deg); }
-        .logo-name { font-size: 20px; font-weight: 800; background: linear-gradient(135deg, #667eea, #f093fb); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; letter-spacing: 2px; }
+        .logo-name { font-size: 19px; font-weight: 800; background: linear-gradient(135deg, #667eea, #f093fb); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; letter-spacing: 2px; }
 
-        .sidebar-section-title { padding: 16px 24px 8px; font-size: 11px; font-weight: 700; color: rgba(255,255,255,0.3); letter-spacing: 1.5px; text-transform: uppercase; }
+        .sidebar-section-title { padding: 14px 20px 6px; font-size: 10px; font-weight: 700; color: rgba(255,255,255,0.3); letter-spacing: 1.5px; text-transform: uppercase; display: flex; align-items: center; gap: 6px; }
 
-        /* ===== CHANNEL ITEM ===== */
-        .channel-item { margin: 0 12px 4px; padding: 10px 14px; border-radius: 10px; display: flex; align-items: center; gap: 10px; cursor: pointer; transition: all 0.2s ease; }
-        .channel-item:hover { background: rgba(255,255,255,0.08); }
-        .channel-item.active { background: rgba(102,126,234,0.25); border: 1px solid rgba(102,126,234,0.3); }
+        .channel-item { margin: 2px 10px; padding: 10px 12px; border-radius: 10px; display: flex; align-items: center; gap: 10px; cursor: pointer; transition: all 0.2s ease; }
+        .channel-item:hover { background: rgba(255,255,255,0.07); }
+        .channel-item.active { background: rgba(102,126,234,0.2); border: 1px solid rgba(102,126,234,0.25); }
         .channel-icon { font-size: 16px; }
         .channel-info { flex: 1; overflow: hidden; }
         .channel-name { font-size: 13px; font-weight: 600; color: white; }
-        .channel-sub { font-size: 10px; color: rgba(255,255,255,0.4); margin-top: 1px; }
+        .channel-sub { font-size: 10px; color: rgba(255,255,255,0.35); margin-top: 1px; }
         .channel-badge { background: linear-gradient(135deg, #667eea, #764ba2); color: white; font-size: 10px; font-weight: 800; min-width: 16px; height: 16px; border-radius: 8px; display: flex; align-items: center; justify-content: center; padding: 0 4px; }
 
-        /* ===== DM USER LIST ===== */
-        .dm-item { margin: 0 12px 4px; padding: 10px 14px; border-radius: 10px; display: flex; align-items: center; gap: 10px; cursor: pointer; transition: all 0.2s ease; }
-        .dm-item:hover { background: rgba(255,255,255,0.08); }
-        .dm-item.active { background: rgba(102,126,234,0.25); border: 1px solid rgba(102,126,234,0.3); }
-        .dm-avatar { width: 32px; height: 32px; border-radius: 50%; background: linear-gradient(135deg, #f093fb, #f5576c); display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; color: white; flex-shrink: 0; overflow: hidden; }
-        .dm-info { flex: 1; overflow: hidden; }
+        /* ===== DM ITEM - WhatsApp style ===== */
+        .dm-item { margin: 2px 10px; padding: 10px 12px; border-radius: 10px; display: flex; align-items: center; gap: 10px; cursor: pointer; transition: all 0.2s ease; }
+        .dm-item:hover { background: rgba(255,255,255,0.07); }
+        .dm-item.active { background: rgba(102,126,234,0.2); border: 1px solid rgba(102,126,234,0.25); }
+
+        .dm-avatar { width: 40px; height: 40px; border-radius: 50%; background: linear-gradient(135deg, #f093fb, #f5576c); display: flex; align-items: center; justify-content: center; font-size: 15px; font-weight: 700; color: white; flex-shrink: 0; overflow: hidden; }
+
+        .dm-info { flex: 1; overflow: hidden; min-width: 0; }
+        .dm-name-row { display: flex; align-items: center; justify-content: space-between; gap: 4px; }
         .dm-name { font-size: 13px; font-weight: 600; color: white; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .dm-status { font-size: 10px; color: rgba(255,255,255,0.4); margin-top: 1px; }
-        .dm-lock-icon { font-size: 12px; color: rgba(255,215,0,0.6); }
-        .dm-unread { background: #e74c3c; color: white; font-size: 10px; font-weight: 800; min-width: 16px; height: 16px; border-radius: 8px; display: flex; align-items: center; justify-content: center; padding: 0 4px; }
+        .dm-time { font-size: 10px; color: rgba(255,255,255,0.3); flex-shrink: 0; }
+        .dm-preview-row { display: flex; align-items: center; justify-content: space-between; margin-top: 2px; }
+        .dm-preview { font-size: 11px; color: rgba(255,255,255,0.35); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; }
+        .dm-lock-icon { font-size: 11px; color: rgba(255,215,0,0.5); flex-shrink: 0; margin-left: 4px; }
+        .dm-unread { background: #667eea; color: white; font-size: 10px; font-weight: 800; min-width: 16px; height: 16px; border-radius: 8px; display: flex; align-items: center; justify-content: center; padding: 0 4px; flex-shrink: 0; }
 
-        .online-dot { width: 8px; height: 8px; background: #2ecc71; border-radius: 50%; box-shadow: 0 0 6px #2ecc71; animation: pulse 2s ease-in-out infinite; }
-        .notif-badge { background: linear-gradient(135deg, #667eea, #764ba2); color: white; font-size: 10px; font-weight: 800; min-width: 18px; height: 18px; border-radius: 9px; display: flex; align-items: center; justify-content: center; padding: 0 4px; animation: pulse 1.5s ease-in-out infinite; }
+        .online-dot { width: 7px; height: 7px; background: #2ecc71; border-radius: 50%; box-shadow: 0 0 6px #2ecc71; animation: pulse 2s ease-in-out infinite; }
 
-        .sidebar-spacer { flex: 1; }
-        .sidebar-user { padding: 12px 16px; border-top: 1px solid rgba(255,255,255,0.07); display: flex; align-items: center; gap: 8px; }
-        .user-avatar { width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 15px; font-weight: 700; color: white; flex-shrink: 0; transition: transform 0.3s ease; overflow: hidden; padding: 0; }
-        .user-avatar:hover { transform: scale(1.1); }
+        .sidebar-spacer { flex: 1; min-height: 12px; }
+
+        .sidebar-user { padding: 10px 14px; border-top: 1px solid rgba(255,255,255,0.07); display: flex; align-items: center; gap: 8px; }
+        .user-avatar { width: 34px; height: 34px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 700; color: white; flex-shrink: 0; overflow: hidden; padding: 0; transition: transform 0.2s; }
+        .user-avatar:hover { transform: scale(1.08); }
         .user-info { flex: 1; overflow: hidden; }
         .user-name { font-size: 13px; font-weight: 600; color: white; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .user-status { font-size: 10px; color: #2ecc71; margin-top: 1px; }
 
-        .icon-btn { width: 32px; height: 32px; border-radius: 10px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 15px; transition: all 0.2s; flex-shrink: 0; position: relative; overflow: hidden; border: 1px solid transparent; }
+        .icon-btn { width: 30px; height: 30px; border-radius: 9px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 14px; transition: all 0.2s; flex-shrink: 0; border: 1px solid transparent; }
         .logout-icon-btn { background: rgba(231,76,60,0.15); border-color: rgba(231,76,60,0.3); color: #e74c3c; }
-        .logout-icon-btn:hover { background: rgba(231,76,60,0.35); transform: scale(1.05); }
+        .logout-icon-btn:hover { background: rgba(231,76,60,0.3); }
         .profile-icon-btn { background: rgba(102,126,234,0.15); border-color: rgba(102,126,234,0.3); color: #667eea; }
-        .profile-icon-btn:hover { background: rgba(102,126,234,0.35); transform: scale(1.05); }
+        .profile-icon-btn:hover { background: rgba(102,126,234,0.3); }
 
         .ripple-btn { position: relative; overflow: hidden; }
-        .ripple-btn::after { content: ''; position: absolute; width: 10px; height: 10px; background: rgba(255,255,255,0.3); border-radius: 50%; top: 50%; left: 50%; transform: translate(-50%, -50%) scale(0); opacity: 1; }
+        .ripple-btn::after { content: ''; position: absolute; width: 10px; height: 10px; background: rgba(255,255,255,0.3); border-radius: 50%; top: 50%; left: 50%; transform: translate(-50%,-50%) scale(0); opacity: 1; }
         .ripple-btn:active::after { animation: ripple 0.4s ease-out; }
 
-        /* ===== CHAT MAIN ===== */
         .chat-main { flex: 1; display: flex; flex-direction: column; overflow: hidden; position: relative; }
 
-        .chat-header { padding: 16px 24px; background: rgba(0,0,0,0.2); border-bottom: 1px solid rgba(255,255,255,0.07); display: flex; align-items: center; gap: 12px; position: relative; }
+        .chat-header { padding: 14px 22px; background: rgba(0,0,0,0.2); border-bottom: 1px solid rgba(255,255,255,0.07); display: flex; align-items: center; gap: 12px; position: relative; }
 
-        .sidebar-toggle { background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.12); color: white; width: 32px; height: 32px; border-radius: 10px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 15px; transition: all 0.3s ease; flex-shrink: 0; }
-        .sidebar-toggle:hover { background: rgba(255,255,255,0.15); transform: scale(1.05); }
+        .sidebar-toggle { background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.12); color: white; width: 30px; height: 30px; border-radius: 9px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 14px; transition: all 0.3s; flex-shrink: 0; }
+        .sidebar-toggle:hover { background: rgba(255,255,255,0.15); }
 
-        .chat-header-avatar { width: 38px; height: 38px; border-radius: 10px; background: linear-gradient(135deg, #667eea, #764ba2); display: flex; align-items: center; justify-content: center; font-size: 18px; }
+        .chat-header-avatar { width: 36px; height: 36px; border-radius: 9px; background: linear-gradient(135deg, #667eea, #764ba2); display: flex; align-items: center; justify-content: center; font-size: 17px; flex-shrink: 0; overflow: hidden; }
         .chat-header-info { flex: 1; }
-        .chat-header-name { font-size: 15px; font-weight: 700; color: white; }
-        .chat-header-status { font-size: 11px; color: rgba(255,255,255,0.4); margin-top: 2px; display: flex; align-items: center; gap: 6px; }
-        .status-dot { width: 7px; height: 7px; border-radius: 50%; box-shadow: 0 0 5px #2ecc71; animation: pulse 2s ease-in-out infinite; }
-        .msg-count { font-size: 11px; color: rgba(255,255,255,0.3); background: rgba(255,255,255,0.07); padding: 3px 10px; border-radius: 20px; }
+        .chat-header-name { font-size: 14px; font-weight: 700; color: white; }
+        .chat-header-status { font-size: 11px; color: rgba(255,255,255,0.4); margin-top: 2px; display: flex; align-items: center; gap: 5px; }
+        .status-dot { width: 6px; height: 6px; border-radius: 50%; animation: pulse 2s ease-in-out infinite; }
+        .msg-count { font-size: 11px; color: rgba(255,255,255,0.3); background: rgba(255,255,255,0.07); padding: 3px 9px; border-radius: 20px; }
 
-        .header-btn { background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.12); color: white; width: 32px; height: 32px; border-radius: 10px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 15px; transition: all 0.3s ease; flex-shrink: 0; }
-        .header-btn:hover { background: rgba(255,255,255,0.15); transform: scale(1.05); }
+        .header-btn { background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.12); color: white; width: 30px; height: 30px; border-radius: 9px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 14px; transition: all 0.2s; flex-shrink: 0; }
+        .header-btn:hover { background: rgba(255,255,255,0.15); }
         .header-btn.active { background: rgba(102,126,234,0.3); border-color: #667eea; }
 
-        /* ===== SEARCH ===== */
-        .search-bar { position: absolute; top: 68px; left: 0; right: 0; padding: 10px 24px; background: rgba(0,0,0,0.4); border-bottom: 1px solid rgba(255,255,255,0.07); animation: slideDown 0.2s ease; z-index: 10; display: flex; align-items: center; gap: 10px; }
-        .search-input { flex: 1; background: rgba(255,255,255,0.08); border: 1.5px solid rgba(255,255,255,0.15); border-radius: 10px; color: white; font-size: 13px; padding: 8px 14px; outline: none; transition: all 0.3s; }
+        .search-bar { position: absolute; top: 64px; left: 0; right: 0; padding: 10px 22px; background: rgba(0,0,0,0.4); border-bottom: 1px solid rgba(255,255,255,0.07); z-index: 10; display: flex; align-items: center; gap: 10px; animation: slideDown 0.2s ease; }
+        .search-input { flex: 1; background: rgba(255,255,255,0.08); border: 1.5px solid rgba(255,255,255,0.15); border-radius: 9px; color: white; font-size: 13px; padding: 7px 12px; outline: none; }
         .search-input:focus { border-color: #667eea; }
         .search-input::placeholder { color: rgba(255,255,255,0.3); }
         .search-results-count { font-size: 11px; color: rgba(255,255,255,0.4); white-space: nowrap; }
-        .search-close { background: none; border: none; color: rgba(255,255,255,0.5); font-size: 18px; cursor: pointer; }
+        .search-close { background: none; border: none; color: rgba(255,255,255,0.5); font-size: 17px; cursor: pointer; }
         .search-highlight { background: rgba(255,215,0,0.3); border-radius: 3px; padding: 0 2px; }
 
-        /* ===== BG PICKER ===== */
-        .bg-picker-dropdown { position: absolute; top: 68px; right: 16px; background: rgba(15,15,35,0.97); border: 1px solid rgba(255,255,255,0.12); border-radius: 16px; padding: 16px; z-index: 999; min-width: 200px; box-shadow: 0 20px 60px rgba(0,0,0,0.5); animation: slideIn 0.2s ease; }
-        .bg-picker-title { font-size: 11px; font-weight: 700; color: rgba(255,255,255,0.4); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 10px; }
+        .bg-picker-dropdown { position: absolute; top: 64px; right: 14px; background: rgba(15,15,35,0.97); border: 1px solid rgba(255,255,255,0.12); border-radius: 14px; padding: 14px; z-index: 999; min-width: 190px; box-shadow: 0 20px 60px rgba(0,0,0,0.5); animation: slideIn 0.2s ease; }
+        .bg-picker-title { font-size: 10px; font-weight: 700; color: rgba(255,255,255,0.4); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 10px; }
         .bg-options { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
-        .bg-option { padding: 8px 10px; border-radius: 8px; cursor: pointer; font-size: 11px; font-weight: 600; color: white; border: 2px solid transparent; transition: all 0.2s ease; text-align: center; }
+        .bg-option { padding: 7px 9px; border-radius: 8px; cursor: pointer; font-size: 11px; font-weight: 600; color: white; border: 2px solid transparent; transition: all 0.2s; text-align: center; }
         .bg-option:hover { border-color: rgba(255,255,255,0.3); }
         .bg-option.active { border-color: #667eea; }
 
-        /* ===== PINNED ===== */
-        .pinned-panel { position: absolute; top: 68px; left: 0; right: 0; background: rgba(10,10,30,0.97); border-bottom: 1px solid rgba(255,215,0,0.2); padding: 14px 24px; z-index: 10; animation: slideDown 0.2s ease; max-height: 220px; overflow-y: auto; }
-        .pinned-panel-title { font-size: 11px; font-weight: 700; color: rgba(255,215,0,0.7); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 10px; }
-        .pinned-item { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: 8px; background: rgba(255,215,0,0.05); border: 1px solid rgba(255,215,0,0.1); margin-bottom: 6px; }
+        .pinned-panel { position: absolute; top: 64px; left: 0; right: 0; background: rgba(10,10,30,0.97); border-bottom: 1px solid rgba(255,215,0,0.2); padding: 12px 22px; z-index: 10; animation: slideDown 0.2s ease; max-height: 200px; overflow-y: auto; }
+        .pinned-panel-title { font-size: 10px; font-weight: 700; color: rgba(255,215,0,0.7); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
+        .pinned-item { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 8px; background: rgba(255,215,0,0.04); border: 1px solid rgba(255,215,0,0.1); margin-bottom: 5px; }
         .pinned-item-content { flex: 1; overflow: hidden; }
         .pinned-item-text { font-size: 12px; color: rgba(255,255,255,0.8); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .pinned-item-meta { font-size: 10px; color: rgba(255,255,255,0.3); margin-top: 1px; }
         .unpin-btn { background: none; border: none; color: rgba(255,255,255,0.3); font-size: 13px; cursor: pointer; }
         .unpin-btn:hover { color: #e74c3c; }
 
-        /* ===== MESSAGES ===== */
-        .messages-area { flex: 1; overflow-y: auto; padding: 20px 24px; display: flex; flex-direction: column; gap: 12px; scroll-behavior: smooth; }
+        .messages-area { flex: 1; overflow-y: auto; padding: 18px 22px; display: flex; flex-direction: column; gap: 10px; scroll-behavior: smooth; }
         .messages-area::-webkit-scrollbar { width: 4px; }
-        .messages-area::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 3px; }
+        .messages-area::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 3px; }
 
-        .date-separator { display: flex; align-items: center; gap: 12px; align-self: stretch; margin: 6px 0; }
-        .date-separator-line { flex: 1; height: 1px; background: rgba(255,255,255,0.08); }
-        .date-separator-label { font-size: 11px; font-weight: 600; color: rgba(255,255,255,0.3); padding: 3px 10px; background: rgba(255,255,255,0.04); border-radius: 20px; border: 1px solid rgba(255,255,255,0.07); white-space: nowrap; }
+        .date-separator { display: flex; align-items: center; gap: 10px; align-self: stretch; margin: 4px 0; }
+        .date-separator-line { flex: 1; height: 1px; background: rgba(255,255,255,0.07); }
+        .date-separator-label { font-size: 10px; font-weight: 600; color: rgba(255,255,255,0.28); padding: 2px 9px; background: rgba(255,255,255,0.04); border-radius: 20px; border: 1px solid rgba(255,255,255,0.06); white-space: nowrap; }
 
-        .system-msg { text-align: center; color: rgba(255,255,255,0.3); font-size: 11px; padding: 4px 12px; background: rgba(255,255,255,0.04); border-radius: 20px; align-self: center; }
+        .system-msg { text-align: center; color: rgba(255,255,255,0.28); font-size: 11px; padding: 3px 10px; background: rgba(255,255,255,0.03); border-radius: 20px; align-self: center; }
 
-        .msg-row { display: flex; gap: 8px; animation: fadeIn 0.3s ease; max-width: 70%; position: relative; transition: transform 0.2s ease; }
-        .msg-row:hover { transform: translateY(-1px); }
+        .msg-row { display: flex; gap: 8px; animation: fadeIn 0.25s ease; max-width: 68%; position: relative; }
+        .msg-row:hover { }
         .msg-row.mine { align-self: flex-end; flex-direction: row-reverse; }
         .msg-row.theirs { align-self: flex-start; }
 
-        .msg-avatar { width: 32px; height: 32px; border-radius: 50%; background: linear-gradient(135deg, #f093fb, #f5576c); display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; color: white; flex-shrink: 0; align-self: flex-end; overflow: hidden; padding: 0; }
+        .msg-avatar { width: 30px; height: 30px; border-radius: 50%; background: linear-gradient(135deg, #f093fb, #f5576c); display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; color: white; flex-shrink: 0; align-self: flex-end; overflow: hidden; padding: 0; }
         .msg-row.mine .msg-avatar { background: linear-gradient(135deg, #667eea, #764ba2); }
 
-        .msg-content { display: flex; flex-direction: column; gap: 3px; }
+        .msg-content { display: flex; flex-direction: column; gap: 2px; }
         .msg-row.mine .msg-content { align-items: flex-end; }
         .msg-row.theirs .msg-content { align-items: flex-start; }
-        .msg-sender { font-size: 11px; color: rgba(255,255,255,0.4); padding: 0 4px; }
+        .msg-sender { font-size: 10px; color: rgba(255,255,255,0.4); padding: 0 3px; }
 
-        .msg-bubble { padding: 10px 14px; border-radius: 16px; font-size: 14px; line-height: 1.5; word-break: break-word; max-width: 100%; }
-        .msg-row.mine .msg-bubble { background: linear-gradient(135deg, #667eea, #764ba2); color: white; border-bottom-right-radius: 4px; box-shadow: 0 4px 15px rgba(102,126,234,0.3); }
-        .msg-row.theirs .msg-bubble { background: rgba(255,255,255,0.09); color: rgba(255,255,255,0.9); border: 1px solid rgba(255,255,255,0.08); border-bottom-left-radius: 4px; }
+        .msg-bubble { padding: 9px 13px; border-radius: 15px; font-size: 13px; line-height: 1.5; word-break: break-word; max-width: 100%; }
+        .msg-row.mine .msg-bubble { background: linear-gradient(135deg, #667eea, #764ba2); color: white; border-bottom-right-radius: 3px; box-shadow: 0 3px 12px rgba(102,126,234,0.28); }
+        .msg-row.theirs .msg-bubble { background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.9); border: 1px solid rgba(255,255,255,0.07); border-bottom-left-radius: 3px; }
 
-        .msg-footer { display: flex; align-items: center; gap: 6px; padding: 0 4px; }
-        .msg-time { font-size: 10px; color: rgba(255,255,255,0.3); }
-        .edited-tag { font-size: 10px; color: rgba(255,255,255,0.3); font-style: italic; }
-        .seen-status { font-size: 11px; color: rgba(102,126,234,0.8); font-weight: 600; }
-        .seen-status.delivered { color: rgba(255,255,255,0.3); }
-        .msg-pin-indicator { font-size: 11px; color: rgba(255,215,0,0.6); }
+        .msg-footer { display: flex; align-items: center; gap: 5px; padding: 0 3px; }
+        .msg-time { font-size: 9px; color: rgba(255,255,255,0.28); }
+        .edited-tag { font-size: 9px; color: rgba(255,255,255,0.28); font-style: italic; }
+        .seen-status { font-size: 10px; color: rgba(102,126,234,0.8); font-weight: 600; }
+        .seen-status.delivered { color: rgba(255,255,255,0.28); }
+        .msg-pin-indicator { font-size: 10px; color: rgba(255,215,0,0.5); }
 
-        .msg-actions { display: flex; gap: 5px; margin-top: 2px; opacity: 0; transition: opacity 0.2s; }
+        .msg-actions { display: flex; gap: 4px; margin-top: 2px; opacity: 0; transition: opacity 0.15s; }
         .msg-row:hover .msg-actions { opacity: 1; }
-        .action-btn { background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.15); color: rgba(255,255,255,0.7); padding: 2px 8px; border-radius: 6px; font-size: 11px; cursor: pointer; transition: all 0.2s; }
-        .action-btn:hover { background: rgba(255,255,255,0.2); color: white; }
-        .action-btn.delete:hover { background: rgba(231,76,60,0.3); border-color: rgba(231,76,60,0.5); color: #e74c3c; }
-        .action-btn.pinned { color: rgba(255,215,0,0.8); }
+        .action-btn { background: rgba(255,255,255,0.09); border: 1px solid rgba(255,255,255,0.13); color: rgba(255,255,255,0.65); padding: 2px 7px; border-radius: 6px; font-size: 10px; cursor: pointer; transition: all 0.15s; }
+        .action-btn:hover { background: rgba(255,255,255,0.18); color: white; }
+        .action-btn.delete:hover { background: rgba(231,76,60,0.25); color: #e74c3c; }
+        .action-btn.pinned { color: rgba(255,215,0,0.7); }
 
-        .reactions-bar { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
-        .reaction-btn { background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.12); border-radius: 20px; padding: 2px 7px; font-size: 12px; cursor: pointer; transition: all 0.2s; color: white; display: flex; align-items: center; gap: 3px; }
-        .reaction-btn:hover { background: rgba(255,255,255,0.18); transform: scale(1.1); }
-        .reaction-btn.reacted { background: rgba(102,126,234,0.25); border-color: rgba(102,126,234,0.5); }
-        .reaction-count { font-size: 11px; color: rgba(255,255,255,0.7); }
+        .reactions-bar { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 3px; }
+        .reaction-btn { background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.11); border-radius: 20px; padding: 1px 6px; font-size: 11px; cursor: pointer; transition: all 0.15s; color: white; display: flex; align-items: center; gap: 3px; }
+        .reaction-btn:hover { background: rgba(255,255,255,0.16); transform: scale(1.08); }
+        .reaction-btn.reacted { background: rgba(102,126,234,0.22); border-color: rgba(102,126,234,0.45); }
+        .reaction-count { font-size: 10px; color: rgba(255,255,255,0.65); }
 
-        .reaction-picker { display: flex; gap: 3px; margin-top: 3px; background: rgba(30,30,60,0.95); border: 1px solid rgba(255,255,255,0.1); border-radius: 20px; padding: 3px 7px; }
-        .reaction-pick-btn { background: none; border: none; font-size: 16px; cursor: pointer; transition: transform 0.2s; padding: 2px; }
+        .reaction-picker { display: flex; gap: 3px; margin-top: 3px; background: rgba(25,25,55,0.96); border: 1px solid rgba(255,255,255,0.09); border-radius: 20px; padding: 3px 7px; }
+        .reaction-pick-btn { background: none; border: none; font-size: 15px; cursor: pointer; transition: transform 0.15s; padding: 1px; }
         .reaction-pick-btn:hover { transform: scale(1.3); }
 
-        .edit-input { background: rgba(255,255,255,0.1); border: 1.5px solid #667eea; border-radius: 10px; color: white; font-size: 13px; padding: 7px 11px; outline: none; width: 100%; min-width: 180px; }
-        .edit-actions { display: flex; gap: 5px; margin-top: 3px; }
-        .save-btn { background: linear-gradient(135deg, #667eea, #764ba2); border: none; color: white; padding: 4px 10px; border-radius: 7px; font-size: 12px; cursor: pointer; font-weight: 600; }
-        .cancel-btn { background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); color: rgba(255,255,255,0.7); padding: 4px 10px; border-radius: 7px; font-size: 12px; cursor: pointer; }
+        .edit-input { background: rgba(255,255,255,0.09); border: 1.5px solid #667eea; border-radius: 9px; color: white; font-size: 13px; padding: 6px 10px; outline: none; width: 100%; min-width: 160px; }
+        .edit-actions { display: flex; gap: 4px; margin-top: 3px; }
+        .save-btn { background: linear-gradient(135deg, #667eea, #764ba2); border: none; color: white; padding: 3px 9px; border-radius: 7px; font-size: 11px; cursor: pointer; font-weight: 600; }
+        .cancel-btn { background: rgba(255,255,255,0.09); border: 1px solid rgba(255,255,255,0.18); color: rgba(255,255,255,0.65); padding: 3px 9px; border-radius: 7px; font-size: 11px; cursor: pointer; }
 
-        /* ===== REPLY ===== */
-        .reply-bar { padding: 7px 10px; background: rgba(102,126,234,0.1); border-left: 3px solid #667eea; border-radius: 7px; margin-bottom: 7px; display: flex; align-items: center; gap: 8px; animation: slideDown 0.2s ease; }
+        .reply-bar { padding: 6px 10px; background: rgba(102,126,234,0.09); border-left: 3px solid #667eea; border-radius: 7px; margin-bottom: 6px; display: flex; align-items: center; gap: 8px; animation: slideDown 0.18s ease; }
         .reply-bar-content { flex: 1; overflow: hidden; }
-        .reply-bar-name { font-size: 11px; font-weight: 700; color: #667eea; margin-bottom: 1px; }
-        .reply-bar-text { font-size: 11px; color: rgba(255,255,255,0.5); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .reply-bar-cancel { background: none; border: none; color: rgba(255,255,255,0.4); font-size: 16px; cursor: pointer; }
+        .reply-bar-name { font-size: 10px; font-weight: 700; color: #667eea; margin-bottom: 1px; }
+        .reply-bar-text { font-size: 10px; color: rgba(255,255,255,0.45); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .reply-bar-cancel { background: none; border: none; color: rgba(255,255,255,0.35); font-size: 15px; cursor: pointer; }
 
-        .msg-reply-preview { background: rgba(255,255,255,0.07); border-left: 3px solid rgba(102,126,234,0.6); border-radius: 5px; padding: 5px 8px; margin-bottom: 5px; cursor: pointer; }
+        .msg-reply-preview { background: rgba(255,255,255,0.06); border-left: 3px solid rgba(102,126,234,0.55); border-radius: 5px; padding: 4px 7px; margin-bottom: 4px; cursor: pointer; }
         .msg-reply-name { font-size: 10px; font-weight: 700; color: #667eea; margin-bottom: 1px; }
-        .msg-reply-text { font-size: 11px; color: rgba(255,255,255,0.5); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .msg-reply-text { font-size: 10px; color: rgba(255,255,255,0.45); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-        .typing-indicator { display: flex; align-items: center; gap: 8px; padding: 6px 14px; align-self: flex-start; }
-        .typing-text { font-size: 11px; color: rgba(255,255,255,0.4); font-style: italic; }
+        .typing-indicator { display: flex; align-items: center; gap: 7px; padding: 5px 12px; align-self: flex-start; }
+        .typing-text { font-size: 11px; color: rgba(255,255,255,0.38); font-style: italic; }
         .typing-dots { display: flex; gap: 3px; align-items: center; }
-        .typing-dot { width: 5px; height: 5px; background: rgba(255,255,255,0.4); border-radius: 50%; animation: typingBounce 1s ease infinite; }
+        .typing-dot { width: 5px; height: 5px; background: rgba(255,255,255,0.38); border-radius: 50%; animation: typingBounce 1s ease infinite; }
         .typing-dot:nth-child(2) { animation-delay: 0.2s; }
         .typing-dot:nth-child(3) { animation-delay: 0.4s; }
 
-        .empty-chat { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; }
-        .empty-icon { font-size: 64px; animation: float 3s ease-in-out infinite; filter: drop-shadow(0 0 20px rgba(102,126,234,0.4)); }
-        .empty-title { font-size: 20px; font-weight: 700; color: rgba(255,255,255,0.5); }
-        .empty-sub { font-size: 13px; color: rgba(255,255,255,0.25); }
-        .empty-hint { font-size: 12px; color: rgba(102,126,234,0.6); background: rgba(102,126,234,0.1); border: 1px solid rgba(102,126,234,0.2); padding: 7px 14px; border-radius: 20px; animation: pulse 3s ease-in-out infinite; }
+        .empty-chat { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; }
+        .empty-icon { font-size: 58px; animation: float 3s ease-in-out infinite; filter: drop-shadow(0 0 18px rgba(102,126,234,0.4)); }
+        .empty-title { font-size: 19px; font-weight: 700; color: rgba(255,255,255,0.45); }
+        .empty-sub { font-size: 12px; color: rgba(255,255,255,0.22); }
+        .empty-hint { font-size: 11px; color: rgba(102,126,234,0.55); background: rgba(102,126,234,0.09); border: 1px solid rgba(102,126,234,0.18); padding: 6px 13px; border-radius: 20px; animation: pulse 3s ease-in-out infinite; }
 
-        /* ===== INPUT AREA ===== */
-        .input-area { padding: 14px 24px 16px; background: rgba(0,0,0,0.2); border-top: 1px solid rgba(255,255,255,0.07); position: relative; }
+        .input-area { padding: 12px 22px 14px; background: rgba(0,0,0,0.18); border-top: 1px solid rgba(255,255,255,0.07); position: relative; }
 
-        .image-preview-bar { padding: 8px 10px; background: rgba(102,126,234,0.1); border: 1px solid rgba(102,126,234,0.2); border-radius: 10px; margin-bottom: 8px; display: flex; align-items: center; gap: 10px; }
-        .preview-img { width: 52px; height: 52px; object-fit: cover; border-radius: 7px; }
+        .image-preview-bar { padding: 7px 9px; background: rgba(102,126,234,0.09); border: 1px solid rgba(102,126,234,0.18); border-radius: 9px; margin-bottom: 7px; display: flex; align-items: center; gap: 9px; }
+        .preview-img { width: 48px; height: 48px; object-fit: cover; border-radius: 7px; }
         .preview-info { flex: 1; }
-        .preview-name { font-size: 12px; color: rgba(255,255,255,0.7); font-weight: 600; }
-        .preview-size { font-size: 10px; color: rgba(255,255,255,0.3); margin-top: 1px; }
-        .upload-progress { font-size: 11px; color: rgba(102,126,234,0.8); animation: pulse 1s ease-in-out infinite; }
-        .preview-cancel { background: none; border: none; color: rgba(255,255,255,0.4); font-size: 16px; cursor: pointer; }
+        .preview-name { font-size: 11px; color: rgba(255,255,255,0.65); font-weight: 600; }
+        .preview-size { font-size: 10px; color: rgba(255,255,255,0.28); margin-top: 1px; }
+        .upload-progress { font-size: 10px; color: rgba(102,126,234,0.75); animation: pulse 1s ease-in-out infinite; }
+        .preview-cancel { background: none; border: none; color: rgba(255,255,255,0.35); font-size: 15px; cursor: pointer; }
 
-        .emoji-picker-popup { position: absolute; bottom: 72px; left: 24px; background: rgba(15,15,35,0.98); border: 1px solid rgba(255,255,255,0.12); border-radius: 14px; padding: 14px; z-index: 999; width: 300px; box-shadow: 0 20px 60px rgba(0,0,0,0.6); animation: slideDown 0.2s ease; }
-        .emoji-picker-title { font-size: 11px; font-weight: 700; color: rgba(255,255,255,0.4); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
-        .emoji-grid { display: grid; grid-template-columns: repeat(10, 1fr); gap: 3px; max-height: 180px; overflow-y: auto; }
-        .emoji-item { background: none; border: none; font-size: 18px; cursor: pointer; padding: 3px; border-radius: 5px; transition: all 0.15s ease; display: flex; align-items: center; justify-content: center; }
-        .emoji-item:hover { background: rgba(255,255,255,0.1); transform: scale(1.3); }
+        .emoji-picker-popup { position: absolute; bottom: 68px; left: 22px; background: rgba(12,12,32,0.98); border: 1px solid rgba(255,255,255,0.11); border-radius: 13px; padding: 12px; z-index: 999; width: 290px; box-shadow: 0 18px 55px rgba(0,0,0,0.65); animation: slideDown 0.18s ease; }
+        .emoji-picker-title { font-size: 10px; font-weight: 700; color: rgba(255,255,255,0.35); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 7px; }
+        .emoji-grid { display: grid; grid-template-columns: repeat(10, 1fr); gap: 2px; max-height: 165px; overflow-y: auto; }
+        .emoji-grid::-webkit-scrollbar { width: 3px; }
+        .emoji-grid::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.18); border-radius: 2px; }
+        .emoji-item { background: none; border: none; font-size: 17px; cursor: pointer; padding: 3px; border-radius: 5px; transition: all 0.12s; display: flex; align-items: center; justify-content: center; }
+        .emoji-item:hover { background: rgba(255,255,255,0.09); transform: scale(1.25); }
 
-        .input-row { display: flex; gap: 10px; align-items: center; background: rgba(255,255,255,0.06); border: 1.5px solid rgba(255,255,255,0.1); border-radius: 14px; padding: 5px 5px 5px 12px; transition: all 0.3s; }
-        .input-row:focus-within { border-color: #667eea; background: rgba(102,126,234,0.08); box-shadow: 0 0 0 3px rgba(102,126,234,0.12); }
+        .input-row { display: flex; gap: 8px; align-items: center; background: rgba(255,255,255,0.055); border: 1.5px solid rgba(255,255,255,0.09); border-radius: 13px; padding: 4px 4px 4px 12px; transition: all 0.28s; }
+        .input-row:focus-within { border-color: #667eea; background: rgba(102,126,234,0.07); box-shadow: 0 0 0 3px rgba(102,126,234,0.1); }
 
-        .emoji-btn { background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.12); color: white; width: 34px; height: 34px; border-radius: 9px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 17px; transition: all 0.2s; flex-shrink: 0; }
-        .emoji-btn:hover { background: rgba(255,255,255,0.15); }
-        .emoji-btn.active { background: rgba(102,126,234,0.3); border-color: #667eea; }
+        .emoji-btn { background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.11); color: white; width: 32px; height: 32px; border-radius: 9px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 16px; transition: all 0.2s; flex-shrink: 0; }
+        .emoji-btn:hover { background: rgba(255,255,255,0.13); }
+        .emoji-btn.active { background: rgba(102,126,234,0.28); border-color: #667eea; }
 
-        .img-upload-btn { background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.12); color: white; width: 34px; height: 34px; border-radius: 9px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 17px; transition: all 0.2s; flex-shrink: 0; }
-        .img-upload-btn:hover { background: rgba(255,255,255,0.15); }
+        .img-upload-btn { background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.11); color: white; width: 32px; height: 32px; border-radius: 9px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 16px; transition: all 0.2s; flex-shrink: 0; }
+        .img-upload-btn:hover { background: rgba(255,255,255,0.13); }
 
-        .msg-input { flex: 1; background: transparent; border: none; color: white; font-size: 14px; outline: none; padding: 7px 0; }
-        .msg-input::placeholder { color: rgba(255,255,255,0.3); }
-        .msg-input:disabled { opacity: 0.5; cursor: not-allowed; }
+        .msg-input { flex: 1; background: transparent; border: none; color: white; font-size: 13px; outline: none; padding: 6px 0; }
+        .msg-input::placeholder { color: rgba(255,255,255,0.28); }
+        .msg-input:disabled { opacity: 0.45; cursor: not-allowed; }
 
-        .send-btn { width: 38px; height: 38px; background: linear-gradient(135deg, #667eea, #764ba2); border: none; border-radius: 11px; color: white; font-size: 17px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s; flex-shrink: 0; }
-        .send-btn:hover { transform: scale(1.08); box-shadow: 0 4px 15px rgba(102,126,234,0.5); }
-        .send-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+        .send-btn { width: 36px; height: 36px; background: linear-gradient(135deg, #667eea, #764ba2); border: none; border-radius: 10px; color: white; font-size: 16px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s; flex-shrink: 0; }
+        .send-btn:hover { transform: scale(1.07); box-shadow: 0 4px 14px rgba(102,126,234,0.5); }
+        .send-btn:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
 
-        .msg-image { max-width: 260px; max-height: 180px; border-radius: 10px; cursor: pointer; display: block; }
-        .msg-image:hover { opacity: 0.9; }
+        .msg-image { max-width: 240px; max-height: 170px; border-radius: 9px; cursor: pointer; display: block; }
+        .msg-image:hover { opacity: 0.88; }
 
-        .file-msg { display: flex; align-items: center; gap: 10px; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); border-radius: 10px; padding: 10px 14px; cursor: pointer; transition: all 0.2s ease; min-width: 180px; }
-        .file-msg:hover { background: rgba(255,255,255,0.15); }
-        .file-msg-icon { font-size: 28px; flex-shrink: 0; }
+        .file-msg { display: flex; align-items: center; gap: 9px; background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.13); border-radius: 9px; padding: 9px 13px; cursor: pointer; transition: all 0.18s; min-width: 170px; }
+        .file-msg:hover { background: rgba(255,255,255,0.13); }
+        .file-msg-icon { font-size: 26px; flex-shrink: 0; }
         .file-msg-info { flex: 1; overflow: hidden; }
         .file-msg-name { font-size: 12px; font-weight: 600; color: white; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .file-msg-action { font-size: 10px; color: rgba(255,255,255,0.4); margin-top: 2px; }
+        .file-msg-action { font-size: 10px; color: rgba(255,255,255,0.38); margin-top: 1px; }
 
-        .no-results { text-align: center; padding: 40px; color: rgba(255,255,255,0.3); font-size: 14px; }
+        .no-results { text-align: center; padding: 38px; color: rgba(255,255,255,0.28); font-size: 13px; }
 
-        /* ===== DRAG OVERLAY ===== */
-        .drag-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(102,126,234,0.2); border: 3px dashed #667eea; z-index: 9999; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 16px; backdrop-filter: blur(4px); }
-        .drag-overlay-icon { font-size: 60px; }
-        .drag-overlay-text { font-size: 22px; font-weight: 700; color: white; }
-        .drag-overlay-sub { font-size: 13px; color: rgba(255,255,255,0.6); }
+        .drag-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(102,126,234,0.18); border: 3px dashed #667eea; z-index: 9999; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 14px; backdrop-filter: blur(4px); }
+        .drag-overlay-icon { font-size: 56px; }
+        .drag-overlay-text { font-size: 20px; font-weight: 700; color: white; }
+        .drag-overlay-sub { font-size: 12px; color: rgba(255,255,255,0.55); }
 
-        /* ===== PROFILE MODAL ===== */
-        .profile-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.7); z-index: 9999; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(4px); }
-        .profile-modal { background: rgba(15,15,35,0.98); border: 1px solid rgba(255,255,255,0.12); border-radius: 20px; padding: 26px; width: 400px; max-width: 90vw; box-shadow: 0 30px 80px rgba(0,0,0,0.6); max-height: 90vh; overflow-y: auto; }
-        .profile-modal-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
-        .profile-modal-title { font-size: 17px; font-weight: 700; color: white; }
-        .profile-close-btn { background: none; border: none; color: rgba(255,255,255,0.4); font-size: 20px; cursor: pointer; }
-        .profile-avatar-section { display: flex; flex-direction: column; align-items: center; gap: 14px; margin-bottom: 20px; }
-        .profile-avatar-preview { width: 76px; height: 76px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 30px; font-weight: 700; color: white; border: 3px solid rgba(255,255,255,0.2); }
-        .avatar-colors { display: flex; gap: 7px; flex-wrap: wrap; justify-content: center; }
-        .avatar-color-btn { width: 26px; height: 26px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; transition: all 0.2s ease; }
-        .avatar-color-btn:hover { transform: scale(1.2); }
+        .profile-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.72); z-index: 9999; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(5px); }
+        .profile-modal { background: rgba(12,12,32,0.99); border: 1px solid rgba(255,255,255,0.11); border-radius: 18px; padding: 24px; width: 390px; max-width: 92vw; box-shadow: 0 28px 75px rgba(0,0,0,0.65); max-height: 90vh; overflow-y: auto; }
+        .profile-modal-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; }
+        .profile-modal-title { font-size: 16px; font-weight: 700; color: white; }
+        .profile-close-btn { background: none; border: none; color: rgba(255,255,255,0.38); font-size: 19px; cursor: pointer; }
+        .profile-avatar-section { display: flex; flex-direction: column; align-items: center; gap: 12px; margin-bottom: 18px; }
+        .profile-avatar-preview { width: 72px; height: 72px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 28px; font-weight: 700; color: white; border: 3px solid rgba(255,255,255,0.18); }
+        .avatar-colors { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; }
+        .avatar-color-btn { width: 24px; height: 24px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; transition: all 0.18s; }
+        .avatar-color-btn:hover { transform: scale(1.18); }
         .avatar-color-btn.selected { border-color: white; }
-        .profile-field { margin-bottom: 14px; }
-        .profile-label { font-size: 11px; font-weight: 700; color: rgba(255,255,255,0.4); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 5px; display: block; }
-        .profile-input { width: 100%; background: rgba(255,255,255,0.08); border: 1.5px solid rgba(255,255,255,0.12); border-radius: 9px; color: white; font-size: 13px; padding: 9px 12px; outline: none; transition: all 0.3s; font-family: 'Segoe UI', sans-serif; }
+        .profile-field { margin-bottom: 12px; }
+        .profile-label { font-size: 10px; font-weight: 700; color: rgba(255,255,255,0.38); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 5px; display: block; }
+        .profile-input { width: 100%; background: rgba(255,255,255,0.07); border: 1.5px solid rgba(255,255,255,0.11); border-radius: 9px; color: white; font-size: 13px; padding: 8px 11px; outline: none; font-family: 'Segoe UI', sans-serif; }
         .profile-input:focus { border-color: #667eea; }
-        .profile-input::placeholder { color: rgba(255,255,255,0.25); }
-        .profile-divider { height: 1px; background: rgba(255,255,255,0.08); margin: 16px 0; }
-        .profile-save-btn { width: 100%; background: linear-gradient(135deg, #667eea, #764ba2); border: none; color: white; padding: 11px; border-radius: 11px; font-size: 14px; font-weight: 700; cursor: pointer; transition: all 0.2s; }
-        .profile-save-btn:disabled { opacity: 0.6; cursor: not-allowed; }
-        .profile-msg { text-align: center; font-size: 12px; margin-top: 10px; color: rgba(255,255,255,0.7); }
+        .profile-input::placeholder { color: rgba(255,255,255,0.22); }
+        .profile-divider { height: 1px; background: rgba(255,255,255,0.07); margin: 14px 0; }
+        .profile-save-btn { width: 100%; background: linear-gradient(135deg, #667eea, #764ba2); border: none; color: white; padding: 10px; border-radius: 10px; font-size: 13px; font-weight: 700; cursor: pointer; }
+        .profile-save-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+        .profile-msg { text-align: center; font-size: 12px; margin-top: 9px; color: rgba(255,255,255,0.65); }
 
-        /* ===== CHAT LOCK MODAL ===== */
-        .lock-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.8); z-index: 99999; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(6px); }
-        .lock-modal { background: rgba(15,15,35,0.99); border: 1px solid rgba(255,215,0,0.2); border-radius: 20px; padding: 28px; width: 360px; max-width: 90vw; box-shadow: 0 30px 80px rgba(0,0,0,0.8); text-align: center; }
-        .lock-icon { font-size: 52px; margin-bottom: 12px; }
-        .lock-title { font-size: 18px; font-weight: 700; color: white; margin-bottom: 6px; }
-        .lock-sub { font-size: 13px; color: rgba(255,255,255,0.4); margin-bottom: 20px; }
-        .lock-input { width: 100%; background: rgba(255,255,255,0.08); border: 1.5px solid rgba(255,215,0,0.3); border-radius: 10px; color: white; font-size: 14px; padding: 11px 14px; outline: none; text-align: center; letter-spacing: 4px; font-family: monospace; margin-bottom: 14px; }
-        .lock-input:focus { border-color: rgba(255,215,0,0.6); }
-        .lock-btn { width: 100%; padding: 12px; border: none; border-radius: 11px; font-size: 14px; font-weight: 700; cursor: pointer; margin-bottom: 8px; transition: all 0.2s; }
+        .lock-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.82); z-index: 99999; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(7px); }
+        .lock-modal { background: rgba(12,12,32,0.99); border: 1px solid rgba(255,215,0,0.18); border-radius: 18px; padding: 26px; width: 340px; max-width: 92vw; text-align: center; }
+        .lock-icon { font-size: 48px; margin-bottom: 10px; }
+        .lock-title { font-size: 17px; font-weight: 700; color: white; margin-bottom: 5px; }
+        .lock-sub { font-size: 12px; color: rgba(255,255,255,0.38); margin-bottom: 18px; }
+        .lock-input { width: 100%; background: rgba(255,255,255,0.07); border: 1.5px solid rgba(255,215,0,0.28); border-radius: 9px; color: white; font-size: 14px; padding: 10px 13px; outline: none; text-align: center; letter-spacing: 4px; font-family: monospace; margin-bottom: 12px; }
+        .lock-input:focus { border-color: rgba(255,215,0,0.55); }
+        .lock-btn { width: 100%; padding: 11px; border: none; border-radius: 10px; font-size: 13px; font-weight: 700; cursor: pointer; margin-bottom: 7px; transition: all 0.18s; }
         .lock-btn-primary { background: linear-gradient(135deg, #f39c12, #d35400); color: white; }
-        .lock-btn-primary:hover { transform: translateY(-1px); }
-        .lock-btn-cancel { background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.6); border: 1px solid rgba(255,255,255,0.12) !important; }
+        .lock-btn-cancel { background: rgba(255,255,255,0.07); color: rgba(255,255,255,0.55); border: 1px solid rgba(255,255,255,0.11) !important; }
 
         @media (max-width: 768px) {
           .chat-layout { flex-direction: column; }
-          .sidebar { width: 100% !important; min-width: 100% !important; height: auto; opacity: 1 !important; border-right: none; border-bottom: 1px solid rgba(255,255,255,0.07); flex-direction: column !important; padding: 0 !important; overflow: visible !important; }
+          .sidebar { width: 100% !important; min-width: 100% !important; height: auto; opacity: 1 !important; border-right: none; border-bottom: 1px solid rgba(255,255,255,0.07); flex-direction: column !important; padding: 0 !important; overflow: visible !important; max-height: 45vh; overflow-y: auto !important; }
           .sidebar-logo { padding: 8px 14px !important; }
           .logo-emoji { font-size: 18px !important; }
           .logo-name { font-size: 14px !important; }
-          .sidebar-section-title { display: none !important; }
-          .channel-item { display: none !important; }
-          .dm-item { display: none !important; }
+          .sidebar-section-title { padding: 8px 14px 4px !important; }
+          .channel-item { margin: 1px 8px !important; padding: 7px 10px !important; }
+          .dm-item { margin: 1px 8px !important; padding: 7px 10px !important; }
+          .dm-avatar { width: 32px !important; height: 32px !important; font-size: 12px !important; }
           .sidebar-spacer { display: none !important; }
           .sidebar-user { padding: 6px 14px !important; }
-          .user-avatar { width: 28px !important; height: 28px !important; font-size: 11px !important; }
-          .user-name { font-size: 12px !important; }
+          .user-avatar { width: 26px !important; height: 26px !important; font-size: 10px !important; }
+          .user-name { font-size: 11px !important; }
           .user-status { display: none !important; }
-          .icon-btn { width: 28px !important; height: 28px !important; font-size: 13px !important; }
-          .chat-main { flex: 1; height: calc(100vh - 90px); }
-          .chat-header { padding: 8px 12px !important; gap: 8px !important; }
+          .icon-btn { width: 26px !important; height: 26px !important; font-size: 12px !important; }
+          .chat-main { flex: 1; }
+          .chat-header { padding: 8px 12px !important; gap: 7px !important; }
           .sidebar-toggle { display: none !important; }
-          .chat-header-avatar { width: 30px !important; height: 30px !important; font-size: 14px !important; border-radius: 7px !important; }
+          .chat-header-avatar { width: 28px !important; height: 28px !important; font-size: 13px !important; border-radius: 7px !important; }
           .chat-header-name { font-size: 13px !important; }
-          .chat-header-status { font-size: 10px !important; }
+          .chat-header-status { font-size: 9px !important; }
           .msg-count { display: none !important; }
-          .header-btn { width: 28px !important; height: 28px !important; font-size: 12px !important; }
-          .messages-area { padding: 10px !important; gap: 8px !important; }
-          .msg-row { max-width: 85% !important; }
-          .msg-bubble { font-size: 13px !important; padding: 8px 12px !important; }
-          .msg-image { max-width: 200px !important; }
-          .msg-avatar { width: 26px !important; height: 26px !important; font-size: 10px !important; }
-          .input-area { padding: 8px 10px 10px !important; }
-          .input-row { padding: 3px 3px 3px 10px !important; gap: 6px !important; }
-          .emoji-btn { width: 28px !important; height: 28px !important; font-size: 15px !important; }
-          .img-upload-btn { width: 28px !important; height: 28px !important; font-size: 15px !important; }
-          .send-btn { width: 34px !important; height: 34px !important; font-size: 15px !important; }
-          .emoji-picker-popup { width: calc(100vw - 20px) !important; left: 10px !important; bottom: 65px !important; }
-          .connection-banner { font-size: 11px !important; padding: 7px 10px !important; }
-          .lock-modal { width: 90vw !important; padding: 20px !important; }
+          .header-btn { width: 27px !important; height: 27px !important; font-size: 12px !important; }
+          .messages-area { padding: 9px !important; gap: 7px !important; }
+          .msg-row { max-width: 84% !important; }
+          .msg-bubble { font-size: 12px !important; padding: 7px 11px !important; }
+          .msg-image { max-width: 185px !important; }
+          .msg-avatar { width: 24px !important; height: 24px !important; font-size: 9px !important; }
+          .input-area { padding: 7px 9px 9px !important; }
+          .input-row { padding: 3px 3px 3px 9px !important; gap: 5px !important; }
+          .emoji-btn { width: 27px !important; height: 27px !important; font-size: 14px !important; }
+          .img-upload-btn { width: 27px !important; height: 27px !important; font-size: 14px !important; }
+          .send-btn { width: 32px !important; height: 32px !important; font-size: 14px !important; border-radius: 9px !important; }
+          .emoji-picker-popup { width: calc(100vw - 18px) !important; left: 9px !important; bottom: 60px !important; }
+          .connection-banner { font-size: 10px !important; padding: 6px 10px !important; }
+          .lock-modal { width: 88vw !important; padding: 18px !important; }
+          .profile-modal { width: 92vw !important; padding: 16px !important; }
         }
       `}</style>
 
-      {/* CONNECTION BANNER */}
       {isReconnecting && (
         <div className="connection-banner reconnecting">
           <div className="reconnect-spinner"></div>
@@ -880,7 +891,6 @@ function Chat({ username, onLogout }) {
         </div>
       )}
 
-      {/* DRAG OVERLAY */}
       {isDragging && (
         <div className="drag-overlay">
           <span className="drag-overlay-icon">📸</span>
@@ -889,49 +899,36 @@ function Chat({ username, onLogout }) {
         </div>
       )}
 
-      {/* CHAT LOCK MODAL - VERIFY */}
       {showLockModal === 'verify' && (
         <div className="lock-overlay">
           <div className="lock-modal">
             <div className="lock-icon">🔒</div>
             <div className="lock-title">This chat is locked</div>
             <div className="lock-sub">Enter password to open chat with {activeDMUser}</div>
-            <input
-              className="lock-input"
-              type="password"
-              placeholder="••••••••"
-              value={lockVerifyPassword}
-              onChange={(e) => setLockVerifyPassword(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && verifyLock()}
-            />
+            <input className="lock-input" type="password" placeholder="••••••••"
+              value={lockVerifyPassword} onChange={(e) => setLockVerifyPassword(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && verifyLock()} />
             <button className="lock-btn lock-btn-primary" onClick={verifyLock}>🔓 Unlock</button>
             <button className="lock-btn lock-btn-cancel" onClick={() => { setShowLockModal(false); setActiveDMUser(null); setActiveRoom('general'); }}>Cancel</button>
           </div>
         </div>
       )}
 
-      {/* CHAT LOCK MODAL - SET */}
       {showLockModal === 'set' && (
         <div className="lock-overlay">
           <div className="lock-modal">
             <div className="lock-icon">🔐</div>
             <div className="lock-title">Lock this chat</div>
             <div className="lock-sub">Set a password for your chat with {activeDMUser}</div>
-            <input
-              className="lock-input"
-              type="password"
-              placeholder="Enter password"
-              value={lockPassword}
-              onChange={(e) => setLockPassword(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && setLock()}
-            />
+            <input className="lock-input" type="password" placeholder="Enter password"
+              value={lockPassword} onChange={(e) => setLockPassword(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && setLock()} />
             <button className="lock-btn lock-btn-primary" onClick={setLock}>🔒 Set Lock</button>
             <button className="lock-btn lock-btn-cancel" onClick={() => setShowLockModal(false)}>Cancel</button>
           </div>
         </div>
       )}
 
-      {/* PROFILE MODAL */}
       {showProfile && (
         <div className="profile-overlay" onClick={(e) => e.target === e.currentTarget && setShowProfile(false)}>
           <div className="profile-modal">
@@ -942,33 +939,27 @@ function Chat({ username, onLogout }) {
             <div className="profile-avatar-section">
               <div className="profile-avatar-preview"
                 style={{ background: profileEdit.avatar_color, cursor: 'pointer', position: 'relative', overflow: 'hidden' }}
-                onClick={() => document.getElementById('avatar-upload').click()}
-              >
+                onClick={() => document.getElementById('avatar-upload').click()}>
                 {profileEdit.avatar_url
                   ? <img src={profileEdit.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
                   : getInitial(username)}
-                <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'rgba(0,0,0,0.5)', fontSize: '10px', color: 'white', textAlign: 'center', padding: '3px' }}>📷 Edit</div>
+                <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'rgba(0,0,0,0.5)', fontSize: '9px', color: 'white', textAlign: 'center', padding: '3px' }}>📷 Edit</div>
               </div>
               <input id="avatar-upload" type="file" accept="image/*" style={{ display: 'none' }} onChange={async (e) => {
                 const file = e.target.files[0];
                 if (!file) return;
-                try {
-                  const url = await uploadToCloudinary(file);
-                  setProfileEdit(prev => ({ ...prev, avatar_url: url }));
-                } catch (err) {}
+                try { const url = await uploadToCloudinary(file); setProfileEdit(prev => ({ ...prev, avatar_url: url })); } catch (err) {}
               }} />
               <div className="avatar-colors">
                 {AVATAR_COLORS.map(color => (
                   <div key={color} className={`avatar-color-btn ${profileEdit.avatar_color === color ? 'selected' : ''}`}
-                    style={{ background: color }}
-                    onClick={() => setProfileEdit(prev => ({ ...prev, avatar_color: color }))}
-                  />
+                    style={{ background: color }} onClick={() => setProfileEdit(prev => ({ ...prev, avatar_color: color }))} />
                 ))}
               </div>
             </div>
             <div className="profile-field">
               <label className="profile-label">Username</label>
-              <input className="profile-input" value={username} disabled style={{ opacity: 0.5 }} />
+              <input className="profile-input" value={username} disabled style={{ opacity: 0.45 }} />
             </div>
             <div className="profile-field">
               <label className="profile-label">Bio / Status</label>
@@ -995,7 +986,6 @@ function Chat({ username, onLogout }) {
       )}
 
       <div className="chat-layout">
-        {/* SIDEBAR */}
         <div className="sidebar">
           <div className="sidebar-logo">
             <div className="logo-row">
@@ -1004,9 +994,9 @@ function Chat({ username, onLogout }) {
             </div>
           </div>
 
-          {/* CHANNELS */}
           <div className="sidebar-section-title">Channels</div>
-          <div className={`channel-item ${activeRoom === 'general' ? 'active' : ''}`} onClick={() => { setActiveRoom('general'); setActiveDMUser(null); }}>
+          <div className={`channel-item ${activeRoom === 'general' ? 'active' : ''}`}
+            onClick={() => { setActiveRoom('general'); setActiveDMUser(null); }}>
             <span className="channel-icon">🌐</span>
             <div className="channel-info">
               <div className="channel-name"># general</div>
@@ -1014,32 +1004,43 @@ function Chat({ username, onLogout }) {
             </div>
             {unreadCount > 0 && !isTabFocused
               ? <div className="channel-badge">{unreadCount}</div>
-              : <div className="online-dot"></div>
-            }
+              : <div className="online-dot"></div>}
           </div>
 
-          {/* DIRECT MESSAGES */}
           <div className="sidebar-section-title">
             Direct Messages
-            {totalUnreadDMs > 0 && <span style={{ marginLeft: '6px', background: '#e74c3c', color: 'white', fontSize: '10px', padding: '1px 6px', borderRadius: '10px' }}>{totalUnreadDMs}</span>}
+            {totalUnreadDMs > 0 && (
+              <span style={{ background: '#e74c3c', color: 'white', fontSize: '9px', padding: '1px 5px', borderRadius: '9px' }}>{totalUnreadDMs}</span>
+            )}
           </div>
-          {allUsers.map(user => {
+
+          {/* ===== SORTED DM LIST ===== */}
+          {sortedUsers.map(user => {
             const roomId = getDMRoomId(username, user.username);
             const unread = unreadDMs[roomId] || 0;
             const isLocked = chatLocks[roomId]?.locked;
+            const lastTs = dmLastMessage[roomId] || 0;
+            const lastPreview = getLastMsgPreview(roomId);
             return (
-              <div key={user.username} className={`dm-item ${activeDMUser === user.username && activeRoom === 'dm' ? 'active' : ''}`} onClick={() => openDM(user.username)}>
+              <div key={user.username}
+                className={`dm-item ${activeDMUser === user.username && activeRoom === 'dm' ? 'active' : ''}`}
+                onClick={() => openDM(user.username)}>
                 <div className="dm-avatar" style={{ background: user.avatar_color || '#667eea' }}>
                   {user.avatar_url
                     ? <img src={user.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
                     : getInitial(user.username)}
                 </div>
                 <div className="dm-info">
-                  <div className="dm-name">{user.username}</div>
-                  <div className="dm-status">{user.bio || 'Click to chat'}</div>
+                  <div className="dm-name-row">
+                    <div className="dm-name">{user.username}</div>
+                    {lastTs > 0 && <div className="dm-time">{formatLastMsgTime(lastTs)}</div>}
+                  </div>
+                  <div className="dm-preview-row">
+                    <div className="dm-preview">{lastPreview}</div>
+                    {isLocked && <span className="dm-lock-icon">🔒</span>}
+                    {unread > 0 && <div className="dm-unread">{unread}</div>}
+                  </div>
                 </div>
-                {isLocked && <span className="dm-lock-icon">🔒</span>}
-                {unread > 0 && <div className="dm-unread">{unread}</div>}
               </div>
             );
           })}
@@ -1055,23 +1056,23 @@ function Chat({ username, onLogout }) {
               <div className="user-name">{username}</div>
               <div className="user-status">{profile.bio || '● Online'}</div>
             </div>
-            <button className="icon-btn profile-icon-btn ripple-btn" onClick={() => setShowProfile(true)} title="Profile">⚙️</button>
-            <button className="icon-btn logout-icon-btn ripple-btn" onClick={onLogout} title="Logout">⏻</button>
+            <button className="icon-btn profile-icon-btn ripple-btn" onClick={() => setShowProfile(true)}>⚙️</button>
+            <button className="icon-btn logout-icon-btn ripple-btn" onClick={onLogout}>⏻</button>
           </div>
         </div>
 
-        {/* MAIN CHAT */}
         <div className="chat-main" onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop} onPaste={handlePaste}>
           <div className="chat-header">
             <button className="sidebar-toggle ripple-btn" onClick={() => setSidebarOpen(!sidebarOpen)}>
               {sidebarOpen ? '◀' : '▶'}
             </button>
             <div className="chat-header-avatar">
-              {activeRoom === 'general' ? '🌐' : (
-                activeDMUser && allUsers.find(u => u.username === activeDMUser)?.avatar_url
-                  ? <img src={allUsers.find(u => u.username === activeDMUser)?.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '10px' }} />
-                  : getInitial(activeDMUser || '')
-              )}
+              {activeRoom === 'general' ? '🌐' : (() => {
+                const dmUser = allUsers.find(u => u.username === activeDMUser);
+                return dmUser?.avatar_url
+                  ? <img src={dmUser.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '9px' }} />
+                  : getInitial(activeDMUser || '');
+              })()}
             </div>
             <div className="chat-header-info">
               <div className="chat-header-name">
@@ -1079,15 +1080,13 @@ function Chat({ username, onLogout }) {
               </div>
               <div className="chat-header-status">
                 <span className="status-dot" style={{ background: isConnected ? '#2ecc71' : '#e74c3c', boxShadow: isConnected ? '0 0 5px #2ecc71' : '0 0 5px #e74c3c' }}></span>
-                {isConnected ? (activeRoom === 'general' ? 'Group Chat — Everyone online' : `Private chat with ${activeDMUser}`) : 'Connecting...'}
+                {isConnected ? (activeRoom === 'general' ? 'Group Chat — Everyone online' : `Private chat`) : 'Connecting...'}
               </div>
             </div>
-            <div className="msg-count">{currentMessages.filter(m => m.type !== 'system').length} messages</div>
+            <div className="msg-count">{currentMessages.filter(m => m.type !== 'system').length} msgs</div>
 
-            {/* LOCK BUTTON FOR DM */}
             {activeRoom === 'dm' && (
-              <button
-                className="header-btn ripple-btn"
+              <button className="header-btn ripple-btn"
                 onClick={() => {
                   const lock = chatLocks[currentRoomId];
                   if (lock?.locked && lock.set_by === username) {
@@ -1096,19 +1095,22 @@ function Chat({ username, onLogout }) {
                     setShowLockModal('set');
                   }
                 }}
-                title={chatLocks[currentRoomId]?.locked ? 'Locked' : 'Lock Chat'}
-              >
+                title={chatLocks[currentRoomId]?.locked ? 'Locked' : 'Lock Chat'}>
                 {chatLocks[currentRoomId]?.locked ? '🔒' : '🔓'}
               </button>
             )}
 
-            <button className={`header-btn ripple-btn ${showSearch ? 'active' : ''}`} onClick={() => { setShowSearch(!showSearch); setSearchQuery(''); }}>🔍</button>
-            {activeRoom === 'general' && <button className={`header-btn ripple-btn ${showPinned ? 'active' : ''}`} onClick={() => setShowPinned(!showPinned)}>📌</button>}
+            <button className={`header-btn ripple-btn ${showSearch ? 'active' : ''}`}
+              onClick={() => { setShowSearch(!showSearch); setSearchQuery(''); }}>🔍</button>
+            {activeRoom === 'general' && (
+              <button className={`header-btn ripple-btn ${showPinned ? 'active' : ''}`}
+                onClick={() => setShowPinned(!showPinned)}>📌</button>
+            )}
             <button className="header-btn ripple-btn" onClick={() => setShowBgPicker(!showBgPicker)}>🎨</button>
 
             {showBgPicker && (
               <div className="bg-picker-dropdown">
-                <div className="bg-picker-title">Chat Background</div>
+                <div className="bg-picker-title">Background</div>
                 <div className="bg-options">
                   {BACKGROUNDS.map(bg => (
                     <div key={bg.id} className={`bg-option ${selectedBg.id === bg.id ? 'active' : ''}`}
@@ -1122,21 +1124,20 @@ function Chat({ username, onLogout }) {
             )}
           </div>
 
-          {/* SEARCH BAR */}
           {showSearch && (
             <div className="search-bar">
-              <input ref={searchInputRef} className="search-input" placeholder="Search messages..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
+              <input ref={searchInputRef} className="search-input" placeholder="Search messages..."
+                value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
               {searchQuery && <span className="search-results-count">{filteredMessages.filter(m => m.type !== 'system').length} results</span>}
               <button className="search-close" onClick={() => { setShowSearch(false); setSearchQuery(''); }}>✕</button>
             </div>
           )}
 
-          {/* PINNED PANEL */}
           {showPinned && activeRoom === 'general' && (
             <div className="pinned-panel">
               <div className="pinned-panel-title">📌 Pinned {pinnedMessages.length > 0 && `(${pinnedMessages.length})`}</div>
               {pinnedMessages.length === 0
-                ? <div style={{ color: 'rgba(255,255,255,0.3)', fontSize: '12px' }}>No pinned messages!</div>
+                ? <div style={{ color: 'rgba(255,255,255,0.28)', fontSize: '11px' }}>No pinned messages!</div>
                 : pinnedMessages.map((p, i) => (
                   <div key={i} className="pinned-item">
                     <span>📌</span>
@@ -1151,14 +1152,13 @@ function Chat({ username, onLogout }) {
             </div>
           )}
 
-          {/* MESSAGES */}
           <div className="messages-area">
             {filteredMessages.length === 0 && searchQuery ? (
               <div className="no-results">🔍 No messages found for "<strong>{searchQuery}</strong>"</div>
             ) : filteredMessages.length === 0 ? (
               <div className="empty-chat">
                 <span className="empty-icon">{activeRoom === 'general' ? '💬' : '🔐'}</span>
-                <div className="empty-title">{activeRoom === 'general' ? 'No messages yet' : `Start chatting with ${activeDMUser}`}</div>
+                <div className="empty-title">{activeRoom === 'general' ? 'No messages yet' : `Chat with ${activeDMUser}`}</div>
                 <div className="empty-sub">{activeRoom === 'general' ? 'Be the first to say hello!' : 'Your messages are private'}</div>
                 <div className="empty-hint">{activeRoom === 'general' ? '✨ Send a message below' : '🔒 You can lock this chat for privacy'}</div>
               </div>
@@ -1192,7 +1192,9 @@ function Chat({ username, onLogout }) {
                         {!isMine && <span className="msg-sender">{msg.username}</span>}
                         {isEditing ? (
                           <>
-                            <input className="edit-input" value={editText} onChange={(e) => setEditText(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && saveEdit(msg._id)} autoFocus />
+                            <input className="edit-input" value={editText}
+                              onChange={(e) => setEditText(e.target.value)}
+                              onKeyDown={(e) => e.key === 'Enter' && saveEdit(msg._id)} autoFocus />
                             <div className="edit-actions">
                               <button className="save-btn" onClick={() => saveEdit(msg._id)}>Save</button>
                               <button className="cancel-btn" onClick={() => setEditingId(null)}>Cancel</button>
@@ -1214,7 +1216,7 @@ function Chat({ username, onLogout }) {
                                 return (
                                   <div>
                                     <img src={parts[0]} alt="" className="msg-image" onClick={() => window.open(parts[0], '_blank')} />
-                                    {parts[1] && <p style={{ marginTop: '7px', fontSize: '13px', color: 'inherit' }}>{parts[1]}</p>}
+                                    {parts[1] && <p style={{ marginTop: '6px', fontSize: '12px', color: 'inherit' }}>{parts[1]}</p>}
                                   </div>
                                 );
                               })() : msg.text?.startsWith('__FILE__') ? (() => {
@@ -1231,10 +1233,10 @@ function Chat({ username, onLogout }) {
                                       <span className="file-msg-icon">{icon || '📎'}</span>
                                       <div className="file-msg-info">
                                         <div className="file-msg-name">{filenamePart}</div>
-                                        <div className="file-msg-action">Click to download ⬇️</div>
+                                        <div className="file-msg-action">Tap to open ↗️</div>
                                       </div>
                                     </div>
-                                    {caption && <p style={{ marginTop: '7px', fontSize: '13px', color: 'inherit' }}>{caption}</p>}
+                                    {caption && <p style={{ marginTop: '6px', fontSize: '12px', color: 'inherit' }}>{caption}</p>}
                                   </div>
                                 );
                               })() : searchQuery ? (
@@ -1255,7 +1257,8 @@ function Chat({ username, onLogout }) {
                               <div className="reactions-bar">
                                 {Object.entries(reactions).map(([emoji, users]) =>
                                   users.length > 0 ? (
-                                    <button key={emoji} className={`reaction-btn ${users.includes(username) ? 'reacted' : ''}`} onClick={() => addReaction(msg._id, emoji)}>
+                                    <button key={emoji} className={`reaction-btn ${users.includes(username) ? 'reacted' : ''}`}
+                                      onClick={() => addReaction(msg._id, emoji)}>
                                       {emoji} <span className="reaction-count">{users.length}</span>
                                     </button>
                                   ) : null
@@ -1265,10 +1268,12 @@ function Chat({ username, onLogout }) {
                             <div className="msg-actions">
                               <div className="reaction-picker">
                                 {REACTIONS.map(emoji => (
-                                  <button key={emoji} className="reaction-pick-btn" onClick={() => addReaction(msg._id, emoji)}>{emoji}</button>
+                                  <button key={emoji} className="reaction-pick-btn"
+                                    onClick={() => addReaction(msg._id, emoji)}>{emoji}</button>
                                 ))}
                               </div>
-                              <button className="action-btn" onClick={() => { setReplyingTo(msg); document.querySelector('.msg-input')?.focus(); }}>↩️</button>
+                              <button className="action-btn"
+                                onClick={() => { setReplyingTo(msg); document.querySelector('.msg-input')?.focus(); }}>↩️</button>
                               {isMine && (
                                 <>
                                   <button className="action-btn" onClick={() => startEdit(msg)}>✏️</button>
@@ -1305,7 +1310,6 @@ function Chat({ username, onLogout }) {
             <div ref={messagesEndRef} />
           </div>
 
-          {/* INPUT AREA */}
           <div className="input-area">
             {replyingTo && (
               <div className="reply-bar">
@@ -1322,7 +1326,7 @@ function Chat({ username, onLogout }) {
               <div className="image-preview-bar">
                 {imagePreview
                   ? <img src={imagePreview} alt="" className="preview-img" />
-                  : <div style={{ width: '52px', height: '52px', background: 'rgba(102,126,234,0.2)', borderRadius: '7px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '26px', flexShrink: 0 }}>{getFileIcon(imageFile)}</div>
+                  : <div style={{ width: '48px', height: '48px', background: 'rgba(102,126,234,0.18)', borderRadius: '7px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '24px', flexShrink: 0 }}>{getFileIcon(imageFile)}</div>
                 }
                 <div className="preview-info">
                   <div className="preview-name">{imageFile?.name}</div>
@@ -1337,23 +1341,23 @@ function Chat({ username, onLogout }) {
                 <div className="emoji-picker-title">Pick an Emoji</div>
                 <div className="emoji-grid">
                   {EMOJI_LIST.map((emoji, i) => (
-                    <button key={i} className="emoji-item" onClick={() => { setInput(prev => prev + emoji); setShowEmojiPicker(false); }}>{emoji}</button>
+                    <button key={i} className="emoji-item"
+                      onClick={() => { setInput(prev => prev + emoji); setShowEmojiPicker(false); }}>{emoji}</button>
                   ))}
                 </div>
               </div>
             )}
             <form className="input-row" onSubmit={sendMessage}>
-              <button type="button" className={`emoji-btn ${showEmojiPicker ? 'active' : ''}`} onClick={() => setShowEmojiPicker(!showEmojiPicker)}>😊</button>
+              <button type="button" className={`emoji-btn ${showEmojiPicker ? 'active' : ''}`}
+                onClick={() => setShowEmojiPicker(!showEmojiPicker)}>😊</button>
               <button type="button" className="img-upload-btn" onClick={() => fileInputRef.current?.click()}>📷</button>
-              <input ref={fileInputRef} type="file" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip,.rar,.txt" style={{ display: 'none' }} onChange={handleFileInput} />
+              <input ref={fileInputRef} type="file"
+                accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip,.rar,.txt"
+                style={{ display: 'none' }} onChange={handleFileInput} />
               <input
-                className="msg-input"
-                type="text"
+                className="msg-input" type="text"
                 placeholder={!isConnected ? '⚠️ Reconnecting...' : imageFile ? 'Add a caption...' : activeRoom === 'general' ? 'Message #general...' : `Message ${activeDMUser}...`}
-                value={input}
-                onChange={handleInputChange}
-                disabled={!isConnected}
-              />
+                value={input} onChange={handleInputChange} disabled={!isConnected} />
               <button type="submit" className="send-btn ripple-btn" disabled={uploading || !isConnected}>
                 {uploading ? '⏳' : !isConnected ? '⚡' : '➤'}
               </button>
