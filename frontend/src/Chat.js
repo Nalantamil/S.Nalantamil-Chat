@@ -86,6 +86,8 @@ function Chat({ username, onLogout }) {
   const typingTimeoutRef = useRef(null);
   const searchInputRef = useRef(null);
   const fileInputRef = useRef(null);
+  const sidebarRef = useRef(null);
+  const touchState = useRef({ startX: 0, startY: 0, currentX: 0, dragging: false, horizontal: false });
 
   const REACTIONS = ['👍', '❤️', '😂', '😮', '😢'];
 
@@ -104,6 +106,13 @@ function Chat({ username, onLogout }) {
     const timeB = dmLastMessage[roomB] || 0;
     return timeB - timeA;
   });
+
+  // ===== MOBILE DRAWER: start closed on small screens =====
+  useEffect(() => {
+    if (window.matchMedia('(max-width: 768px)').matches) {
+      setSidebarOpen(false);
+    }
+  }, []);
 
   useEffect(() => {
     const onFocus = () => { setIsTabFocused(true); setUnreadCount(0); };
@@ -145,7 +154,6 @@ function Chat({ username, onLogout }) {
     try {
       const res = await axios.get(`https://s-nalantamil-chat.onrender.com/dm/${roomId}`);
       setDmMessages(prev => ({ ...prev, [roomId]: res.data }));
-      // Update last message timestamp for sorting
       if (res.data.length > 0) {
         const lastMsg = res.data[res.data.length - 1];
         const ts = lastMsg.timestamp ? new Date(lastMsg.timestamp + 'Z').getTime() : 0;
@@ -175,9 +183,9 @@ function Chat({ username, onLogout }) {
     setActiveRoom('dm');
     await fetchDMMessages(roomId);
     setUnreadDMs(prev => ({ ...prev, [roomId]: 0 }));
+    if (window.matchMedia('(max-width: 768px)').matches) setSidebarOpen(false);
   };
 
-  // ===== PRELOAD DM LAST MESSAGES FOR SORTING =====
   useEffect(() => {
     if (allUsers.length === 0) return;
     allUsers.forEach(async (user) => {
@@ -235,7 +243,6 @@ function Chat({ username, onLogout }) {
         ...prev,
         [roomId]: [...(prev[roomId] || []), { ...msg, reactions: {} }]
       }));
-      // ===== UPDATE LAST MESSAGE FOR SORTING =====
       const ts = msg.timestamp ? new Date(msg.timestamp + 'Z').getTime() : Date.now();
       setDmLastMessage(prev => ({ ...prev, [roomId]: ts }));
 
@@ -481,12 +488,65 @@ function Chat({ username, onLogout }) {
     } catch (err) { alert('Failed to remove lock'); }
   };
 
+  // ===== MOBILE DRAWER SWIPE GESTURES =====
+  const isMobileViewport = () => window.matchMedia('(max-width: 768px)').matches;
+
+  const handleTouchStart = (e) => {
+    if (!isMobileViewport()) return;
+    const t = e.touches[0];
+    touchState.current = { startX: t.clientX, startY: t.clientY, currentX: t.clientX, dragging: true, horizontal: false };
+    if (sidebarRef.current) sidebarRef.current.style.transition = 'none';
+  };
+
+  const handleTouchMove = (e) => {
+    if (!isMobileViewport()) return;
+    const ts = touchState.current;
+    if (!ts.dragging || !sidebarRef.current) return;
+    const t = e.touches[0];
+    ts.currentX = t.clientX;
+    const deltaX = t.clientX - ts.startX;
+    const deltaY = t.clientY - ts.startY;
+
+    if (!ts.horizontal) {
+      if (Math.abs(deltaX) < 8 && Math.abs(deltaY) < 8) return;
+      ts.horizontal = Math.abs(deltaX) > Math.abs(deltaY);
+      if (!ts.horizontal) return;
+    }
+
+    const width = sidebarRef.current.offsetWidth || 280;
+    if (sidebarOpen) {
+      const x = Math.min(0, deltaX);
+      sidebarRef.current.style.transform = `translateX(${x}px)`;
+    } else {
+      const x = Math.min(0, -width + Math.max(0, deltaX));
+      sidebarRef.current.style.transform = `translateX(${x}px)`;
+    }
+  };
+
+  const handleTouchEnd = () => {
+    if (!isMobileViewport()) return;
+    const ts = touchState.current;
+    if (!ts.dragging) return;
+    ts.dragging = false;
+    if (sidebarRef.current) {
+      sidebarRef.current.style.transition = '';
+      sidebarRef.current.style.transform = '';
+    }
+    if (!ts.horizontal) return;
+    const width = sidebarRef.current?.offsetWidth || 280;
+    const deltaX = ts.currentX - ts.startX;
+    if (sidebarOpen) {
+      if (deltaX < -width * 0.25) setSidebarOpen(false);
+    } else {
+      if (deltaX > width * 0.25) setSidebarOpen(true);
+    }
+  };
+
   const formatTime = (timestamp) => {
     if (!timestamp) return '';
     return new Date(timestamp + 'Z').toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
   };
 
-  // ===== FORMAT LAST MESSAGE TIME FOR DM LIST =====
   const formatLastMsgTime = (ts) => {
     if (!ts) return '';
     const date = new Date(ts);
@@ -506,7 +566,6 @@ function Chat({ username, onLogout }) {
     : currentMessages;
   const totalUnreadDMs = Object.values(unreadDMs).reduce((a, b) => a + b, 0);
 
-  // ===== GET LAST MESSAGE PREVIEW FOR DM LIST =====
   const getLastMsgPreview = (roomId) => {
     const msgs = dmMessages[roomId];
     if (!msgs || msgs.length === 0) return 'Click to chat';
@@ -572,6 +631,7 @@ function Chat({ username, onLogout }) {
         .reconnect-dot { width: 8px; height: 8px; background: white; border-radius: 50%; flex-shrink: 0; }
 
         .sidebar {
+          position: relative;
           width: ${sidebarOpen ? '280px' : '0px'};
           min-width: ${sidebarOpen ? '280px' : '0px'};
           background: rgba(0,0,0,0.35);
@@ -580,6 +640,13 @@ function Chat({ username, onLogout }) {
           transition: width 0.3s ease, min-width 0.3s ease, opacity 0.3s ease;
           overflow: hidden;
           opacity: ${sidebarOpen ? '1' : '0'};
+        }
+
+        .sidebar-glow {
+          position: absolute; inset-inline: 0; top: 0; height: 140px;
+          background: linear-gradient(180deg, rgba(102,126,234,0.18), transparent);
+          pointer-events: none;
+          display: none;
         }
 
         .sidebar-logo { padding: 20px 20px 14px; border-bottom: 1px solid rgba(255,255,255,0.07); }
@@ -599,7 +666,6 @@ function Chat({ username, onLogout }) {
         .channel-sub { font-size: 10px; color: rgba(255,255,255,0.35); margin-top: 1px; }
         .channel-badge { background: linear-gradient(135deg, #667eea, #764ba2); color: white; font-size: 10px; font-weight: 800; min-width: 16px; height: 16px; border-radius: 8px; display: flex; align-items: center; justify-content: center; padding: 0 4px; }
 
-        /* ===== DM ITEM - WhatsApp style ===== */
         .dm-item { margin: 2px 10px; padding: 10px 12px; border-radius: 10px; display: flex; align-items: center; gap: 10px; cursor: pointer; transition: all 0.2s ease; }
         .dm-item:hover { background: rgba(255,255,255,0.07); }
         .dm-item.active { background: rgba(102,126,234,0.2); border: 1px solid rgba(102,126,234,0.25); }
@@ -635,6 +701,32 @@ function Chat({ username, onLogout }) {
         .ripple-btn { position: relative; overflow: hidden; }
         .ripple-btn::after { content: ''; position: absolute; width: 10px; height: 10px; background: rgba(255,255,255,0.3); border-radius: 50%; top: 50%; left: 50%; transform: translate(-50%,-50%) scale(0); opacity: 1; }
         .ripple-btn:active::after { animation: ripple 0.4s ease-out; }
+
+        /* ===== MOBILE HAMBURGER (morphs into an X) — hidden on desktop ===== */
+        .mobile-menu-btn {
+          display: none;
+          background: rgba(255,255,255,0.08);
+          border: 1px solid rgba(255,255,255,0.12);
+          width: 32px; height: 32px; border-radius: 9px;
+          align-items: center; justify-content: center;
+          cursor: pointer; flex-shrink: 0;
+        }
+        .mobile-menu-bars { position: relative; width: 15px; height: 11px; display: block; }
+        .mobile-menu-bars span {
+          position: absolute; left: 0; width: 100%; height: 2px;
+          background: white; border-radius: 2px;
+          transition: transform 0.3s ease, opacity 0.15s ease, top 0.3s ease;
+        }
+        .mobile-menu-bars span:nth-child(1) { top: 0; }
+        .mobile-menu-bars span:nth-child(2) { top: 4.5px; }
+        .mobile-menu-bars span:nth-child(3) { top: 9px; }
+        .mobile-menu-btn.open .mobile-menu-bars span:nth-child(1) { top: 4.5px; transform: rotate(45deg); }
+        .mobile-menu-btn.open .mobile-menu-bars span:nth-child(2) { opacity: 0; }
+        .mobile-menu-btn.open .mobile-menu-bars span:nth-child(3) { top: 4.5px; transform: rotate(-45deg); }
+
+        /* ===== MOBILE OVERLAY + EDGE SWIPE STRIP — hidden on desktop ===== */
+        .mobile-overlay { display: none; }
+        .mobile-edge-grab { display: none; }
 
         .chat-main { flex: 1; display: flex; flex-direction: column; overflow: hidden; position: relative; }
 
@@ -689,7 +781,6 @@ function Chat({ username, onLogout }) {
         .system-msg { text-align: center; color: rgba(255,255,255,0.28); font-size: 11px; padding: 3px 10px; background: rgba(255,255,255,0.03); border-radius: 20px; align-self: center; }
 
         .msg-row { display: flex; gap: 8px; animation: fadeIn 0.25s ease; max-width: 68%; position: relative; }
-        .msg-row:hover { }
         .msg-row.mine { align-self: flex-end; flex-direction: row-reverse; }
         .msg-row.theirs { align-self: flex-start; }
 
@@ -844,22 +935,67 @@ function Chat({ username, onLogout }) {
 
         @media (max-width: 768px) {
           .chat-layout { flex-direction: column; }
-          .sidebar { width: 100% !important; min-width: 100% !important; height: auto; opacity: 1 !important; border-right: none; border-bottom: 1px solid rgba(255,255,255,0.07); flex-direction: column !important; padding: 0 !important; overflow: visible !important; max-height: 45vh; overflow-y: auto !important; }
-          .sidebar-logo { padding: 8px 14px !important; }
-          .logo-emoji { font-size: 18px !important; }
-          .logo-name { font-size: 14px !important; }
-          .sidebar-section-title { padding: 8px 14px 4px !important; }
-          .channel-item { margin: 1px 8px !important; padding: 7px 10px !important; }
-          .dm-item { margin: 1px 8px !important; padding: 7px 10px !important; }
-          .dm-avatar { width: 32px !important; height: 32px !important; font-size: 12px !important; }
-          .sidebar-spacer { display: none !important; }
-          .sidebar-user { padding: 6px 14px !important; }
-          .user-avatar { width: 26px !important; height: 26px !important; font-size: 10px !important; }
-          .user-name { font-size: 11px !important; }
-          .user-status { display: none !important; }
-          .icon-btn { width: 26px !important; height: 26px !important; font-size: 12px !important; }
-          .chat-main { flex: 1; }
-          .chat-header { padding: 8px 12px !important; gap: 7px !important; }
+
+          .sidebar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            height: 100%;
+            width: 82vw !important;
+            max-width: 300px;
+            min-width: 0 !important;
+            opacity: 1 !important;
+            border-right: 1px solid rgba(255,255,255,0.08);
+            border-bottom: none;
+            flex-direction: column !important;
+            padding: 0 !important;
+            overflow-y: auto !important;
+            max-height: none;
+            z-index: 60;
+            transform: translateX(-100%);
+            transition: transform 0.35s cubic-bezier(0.16,1,0.3,1), box-shadow 0.35s ease;
+            background: rgba(10,8,25,0.98);
+            backdrop-filter: blur(12px);
+          }
+          .sidebar.open {
+            transform: translateX(0);
+            box-shadow: 12px 0 50px rgba(102,126,234,0.25);
+          }
+          .sidebar-glow { display: block; }
+
+          .sidebar-logo { padding: 20px 20px 14px !important; }
+          .logo-emoji { font-size: 21px !important; }
+          .logo-name { font-size: 16px !important; }
+          .sidebar-section-title { padding: 14px 20px 6px !important; }
+          .channel-item { margin: 2px 10px !important; padding: 10px 12px !important; }
+          .dm-item { margin: 2px 10px !important; padding: 10px 12px !important; }
+          .dm-avatar { width: 38px !important; height: 38px !important; font-size: 14px !important; }
+
+          .sidebar-spacer { display: block !important; }
+          .sidebar-user { padding: 12px 16px !important; }
+          .user-avatar { width: 32px !important; height: 32px !important; font-size: 13px !important; }
+          .user-name { font-size: 13px !important; }
+          .user-status { display: block !important; }
+          .icon-btn { width: 29px !important; height: 29px !important; font-size: 13px !important; }
+
+          .mobile-menu-btn { display: flex !important; }
+          .mobile-overlay {
+            display: block;
+            position: fixed; inset: 0;
+            background: rgba(0,0,0,0.55);
+            backdrop-filter: blur(3px);
+            z-index: 55;
+            animation: fadeIn 0.25s ease;
+          }
+          .mobile-edge-grab {
+            display: block;
+            position: fixed; top: 0; left: 0;
+            height: 100%; width: 14px;
+            z-index: 50;
+          }
+
+          .chat-main { flex: 1; height: 100vh; }
+          .chat-header { padding: 10px 14px !important; gap: 8px !important; }
           .sidebar-toggle { display: none !important; }
           .chat-header-avatar { width: 28px !important; height: 28px !important; font-size: 13px !important; border-radius: 7px !important; }
           .chat-header-name { font-size: 13px !important; }
@@ -991,7 +1127,25 @@ function Chat({ username, onLogout }) {
       )}
 
       <div className="chat-layout">
-        <div className="sidebar">
+        {sidebarOpen && <div className="mobile-overlay" onClick={() => setSidebarOpen(false)}></div>}
+
+        {!sidebarOpen && (
+          <div
+            className="mobile-edge-grab"
+            onTouchStart={handleTouchStart}
+            onTouchMove={handleTouchMove}
+            onTouchEnd={handleTouchEnd}
+          />
+        )}
+
+        <div
+          className={`sidebar ${sidebarOpen ? 'open' : ''}`}
+          ref={sidebarRef}
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
+        >
+          <div className="sidebar-glow"></div>
           <div className="sidebar-logo">
             <div className="logo-row">
               <span className="logo-emoji">💬</span>
@@ -1001,7 +1155,7 @@ function Chat({ username, onLogout }) {
 
           <div className="sidebar-section-title">Channels</div>
           <div className={`channel-item ${activeRoom === 'general' ? 'active' : ''}`}
-            onClick={() => { setActiveRoom('general'); setActiveDMUser(null); }}>
+            onClick={() => { setActiveRoom('general'); setActiveDMUser(null); if (window.matchMedia('(max-width: 768px)').matches) setSidebarOpen(false); }}>
             <span className="channel-icon">🌐</span>
             <div className="channel-info">
               <div className="channel-name"># general</div>
@@ -1019,7 +1173,6 @@ function Chat({ username, onLogout }) {
             )}
           </div>
 
-          {/* ===== SORTED DM LIST ===== */}
           {sortedUsers.map(user => {
             const roomId = getDMRoomId(username, user.username);
             const unread = unreadDMs[roomId] || 0;
@@ -1070,6 +1223,13 @@ function Chat({ username, onLogout }) {
           <div className="chat-header">
             <button className="sidebar-toggle ripple-btn" onClick={() => setSidebarOpen(!sidebarOpen)}>
               {sidebarOpen ? '◀' : '▶'}
+            </button>
+            <button
+              className={`mobile-menu-btn ripple-btn ${sidebarOpen ? 'open' : ''}`}
+              onClick={() => setSidebarOpen(!sidebarOpen)}
+              aria-label={sidebarOpen ? 'Close menu' : 'Open menu'}
+            >
+              <span className="mobile-menu-bars"><span></span><span></span><span></span></span>
             </button>
             <div className="chat-header-avatar">
               {activeRoom === 'general' ? '🌐' : (() => {
