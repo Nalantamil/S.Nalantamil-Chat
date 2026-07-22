@@ -245,11 +245,11 @@ function Chat({ username, onLogout }) {
       }));
       const ts = msg.timestamp ? new Date(msg.timestamp + 'Z').getTime() : Date.now();
       setDmLastMessage(prev => ({ ...prev, [roomId]: ts }));
-
-      const dmUsers = roomId.split('__dm__');
-      const otherUser = dmUsers.find(u => u !== username);
-      if (otherUser && otherUser !== activeDMUser) {
-        setUnreadDMs(prev => ({ ...prev, [roomId]: (prev[roomId] || 0) + 1 }));
+      // Always increment unread if not currently viewing that DM
+      if (roomId !== currentRoomId || activeRoom !== 'dm') {
+        if (msg.username !== username) {
+          setUnreadDMs(prev => ({ ...prev, [roomId]: (prev[roomId] || 0) + 1 }));
+        }
       }
     });
 
@@ -568,11 +568,13 @@ function Chat({ username, onLogout }) {
 
   const getLastMsgPreview = (roomId) => {
     const msgs = dmMessages[roomId];
-    if (!msgs || msgs.length === 0) return 'Click to chat';
+    if (!msgs || msgs.length === 0) return '';
     const last = msgs[msgs.length - 1];
     if (last.text?.startsWith('__IMAGE__')) return '🖼️ Image';
     if (last.text?.startsWith('__FILE__')) return '📎 File';
-    return last.text?.length > 30 ? last.text.substring(0, 30) + '...' : last.text;
+    const words = last.text?.split(' ') || [];
+    if (words.length > 7) return words.slice(0, 7).join(' ') + '...';
+    return last.text || '';
   };
 
   return (
@@ -1194,10 +1196,18 @@ function Chat({ username, onLogout }) {
                     {lastTs > 0 && <div className="dm-time">{formatLastMsgTime(lastTs)}</div>}
                   </div>
                   <div className="dm-preview-row">
-                    <div className="dm-preview">{lastPreview}</div>
-                    {isLocked && <span className="dm-lock-icon">🔒</span>}
-                    {unread > 0 && <div className="dm-unread">{unread}</div>}
+                  <div className="dm-preview" style={{ color: unread > 0 ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.35)', fontWeight: unread > 0 ? '600' : '400' }}>
+                    {lastPreview || 'Click to chat'}
                   </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
+                    {isLocked && <span className="dm-lock-icon">🔒</span>}
+                    {unread > 0 && (
+                      <div style={{ background: '#2ecc71', color: 'white', fontSize: '10px', fontWeight: '800', minWidth: '18px', height: '18px', borderRadius: '9px', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 4px', boxShadow: '0 0 6px rgba(46,204,113,0.6)' }}>
+                        {unread}
+                      </div>
+                    )}
+                  </div>
+                </div>
                 </div>
               </div>
             );
