@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { io } from 'socket.io-client';
 import axios from 'axios';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 
 const socket = io('https://s-nalantamil-chat.onrender.com', {
   transports: ['websocket'],
@@ -90,7 +91,9 @@ function Chat({ username, onLogout }) {
   const REACTIONS = ['👍', '❤️', '😂', '😮', '😢'];
 
   const currentRoomId = activeRoom === 'general' ? 'general' : getDMRoomId(username, activeDMUser);
-  const currentMessages = activeRoom === 'general' ? messages : (dmMessages[currentRoomId] || []);
+  const currentMessages = useMemo(() => {
+    return activeRoom === 'general' ? messages : (dmMessages[currentRoomId] || []);
+  }, [activeRoom, messages, dmMessages, currentRoomId]);
 
   // ===== TAB FOCUS =====
   useEffect(() => {
