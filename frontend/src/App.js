@@ -27,6 +27,15 @@ function App() {
     }
   }, []);
 
+  // Restore session on page load/refresh if a valid token + username exist
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    const savedUser = localStorage.getItem('authUsername');
+    if (token && savedUser) {
+      setLoggedInUser(savedUser);
+    }
+  }, []);
+
   const getPasswordChecks = (pwd) => ({
     length: pwd.length >= 8,
     uppercase: /[A-Z]/.test(pwd),
@@ -50,12 +59,17 @@ function App() {
 
   const passwordStrength = getPasswordStrength(password);
 
+  const USERNAME_PATTERN = /^[A-Za-z0-9_]{3,20}$/;
+
   const validateFields = () => {
     const errors = { username: '', password: '' };
     let valid = true;
 
     if (!username.trim()) {
       errors.username = 'Username required';
+      valid = false;
+    } else if (!isLogin && !USERNAME_PATTERN.test(username.trim())) {
+      errors.username = '3-20 characters · letters, numbers, underscore only';
       valid = false;
     }
 
@@ -88,6 +102,7 @@ function App() {
       setIsError(false);
       if (isLogin) {
         localStorage.setItem('token', response.data.token);
+        localStorage.setItem('authUsername', username);
         if (rememberMe) {
           localStorage.setItem('rememberedUsername', username);
         } else {
@@ -120,6 +135,7 @@ function App() {
 
   const handleLogout = () => {
     localStorage.removeItem('token');
+    localStorage.removeItem('authUsername');
     setLoggedInUser(null);
     setLoginSuccess(false);
     setUsername('');
