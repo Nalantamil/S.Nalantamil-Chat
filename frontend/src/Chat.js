@@ -45,9 +45,9 @@ function Chat({ username, onLogout }) {
   const [editText, setEditText] = useState('');
   const [typingUsers, setTypingUsers] = useState([]);
 
-  // ===== ACCOUNT DRAWER — separate from the chat list. Holds only name/avatar,
-  // edit profile & password, and logout. Closed by default. =====
-  const [profileDrawerOpen, setProfileDrawerOpen] = useState(false);
+  // ===== DRAWER STATE — closed by default everywhere (welcome screen AND inside a chat).
+  // Opened by clicking the hamburger button or by dragging from the left edge. =====
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const [showBgPicker, setShowBgPicker] = useState(false);
   const [selectedBg, setSelectedBg] = useState(BACKGROUNDS[0]);
@@ -73,7 +73,8 @@ function Chat({ username, onLogout }) {
   const [showConnected, setShowConnected] = useState(false);
   const [allUsers, setAllUsers] = useState([]);
 
-  // ===== MOBILE / NARROW-WINDOW DETECTION =====
+  // ===== MOBILE / NARROW-WINDOW DETECTION — single source of truth used only to size
+  // the drawer's width; stays in sync as the browser window is resized/minimized. =====
   const [isMobile, setIsMobile] = useState(() => (typeof window !== 'undefined' ? window.innerWidth <= 768 : false));
 
   // ===== NAVIGATION STATE =====
@@ -95,7 +96,7 @@ function Chat({ username, onLogout }) {
   const typingTimeoutRef = useRef(null);
   const searchInputRef = useRef(null);
   const fileInputRef = useRef(null);
-  const profileDrawerRef = useRef(null);
+  const sidebarRef = useRef(null);
   const dragState = useRef({ startX: 0, startY: 0, currentX: 0, dragging: false, horizontal: false });
 
   const REACTIONS = ['👍', '❤️', '😂', '😮', '😢'];
@@ -127,6 +128,7 @@ function Chat({ username, onLogout }) {
     return () => { window.removeEventListener('focus', onFocus); window.removeEventListener('blur', onBlur); };
   }, []);
 
+  // ===== KEEP isMobile IN SYNC WITH ACTUAL VIEWPORT (resize / rotate / browser minimize) =====
   useEffect(() => {
     const onResize = () => setIsMobile(window.innerWidth <= 768);
     window.addEventListener('resize', onResize);
@@ -168,6 +170,13 @@ function Chat({ username, onLogout }) {
       localStorage.removeItem(`chat_activeDMUser_${username}`);
     }
   }, [activeRoom, activeDMUser, username]);
+
+  // ===== CLOSE THE DRAWER WHENEVER YOU LAND ON/SWITCH A CHAT (both mobile & desktop) =====
+  useEffect(() => {
+    if (activeRoom) {
+      setSidebarOpen(false);
+    }
+  }, [activeRoom, activeDMUser]);
 
   const getDateLabel = (timestamp) => {
     if (!timestamp) return '';
@@ -223,7 +232,7 @@ function Chat({ username, onLogout }) {
     setUnreadDMs(prev => ({ ...prev, [roomId]: 0 }));
   };
 
-  // ===== BACK TO LIST (mobile) =====
+  // ===== BACK TO LIST =====
   const backToList = () => {
     setActiveRoom(null);
     setActiveDMUser(null);
@@ -539,18 +548,20 @@ function Chat({ username, onLogout }) {
     onLogout();
   };
 
-  // ===== ACCOUNT DRAWER DRAG GESTURES (Pointer Events — mouse on desktop, finger
-  // on mobile). Drag left-to-right opens it, right-to-left closes it. =====
+  // ===== DRAWER DRAG GESTURES (Pointer Events — works identically with a mouse on
+  // desktop/browser and with a finger on mobile). Drag left-to-right opens it, drag
+  // right-to-left closes it — from anywhere on the drawer, or from the left-edge
+  // strip when it's closed. =====
   const handleDragStart = (e) => {
     const x = e.clientX, y = e.clientY;
     dragState.current = { startX: x, startY: y, currentX: x, dragging: true, horizontal: false };
-    if (profileDrawerRef.current) profileDrawerRef.current.style.transition = 'none';
+    if (sidebarRef.current) sidebarRef.current.style.transition = 'none';
     try { e.currentTarget.setPointerCapture(e.pointerId); } catch (err) {}
   };
 
   const handleDragMove = (e) => {
     const ds = dragState.current;
-    if (!ds.dragging || !profileDrawerRef.current) return;
+    if (!ds.dragging || !sidebarRef.current) return;
     const x = e.clientX, y = e.clientY;
     ds.currentX = x;
     const deltaX = x - ds.startX;
@@ -563,13 +574,13 @@ function Chat({ username, onLogout }) {
       document.body.style.userSelect = 'none';
     }
 
-    const width = profileDrawerRef.current.offsetWidth || 300;
-    if (profileDrawerOpen) {
+    const width = sidebarRef.current.offsetWidth || 300;
+    if (sidebarOpen) {
       const tx = Math.min(0, deltaX);
-      profileDrawerRef.current.style.transform = `translateX(${tx}px)`;
+      sidebarRef.current.style.transform = `translateX(${tx}px)`;
     } else {
       const tx = Math.min(0, -width + Math.max(0, deltaX));
-      profileDrawerRef.current.style.transform = `translateX(${tx}px)`;
+      sidebarRef.current.style.transform = `translateX(${tx}px)`;
     }
   };
 
@@ -578,17 +589,17 @@ function Chat({ username, onLogout }) {
     if (!ds.dragging) return;
     ds.dragging = false;
     document.body.style.userSelect = '';
-    if (profileDrawerRef.current) {
-      profileDrawerRef.current.style.transition = '';
-      profileDrawerRef.current.style.transform = '';
+    if (sidebarRef.current) {
+      sidebarRef.current.style.transition = '';
+      sidebarRef.current.style.transform = '';
     }
     if (!ds.horizontal) return;
-    const width = profileDrawerRef.current?.offsetWidth || 300;
+    const width = sidebarRef.current?.offsetWidth || 300;
     const deltaX = ds.currentX - ds.startX;
-    if (profileDrawerOpen) {
-      if (deltaX < -width * 0.25) setProfileDrawerOpen(false);
+    if (sidebarOpen) {
+      if (deltaX < -width * 0.25) setSidebarOpen(false);
     } else {
-      if (deltaX > width * 0.25) setProfileDrawerOpen(true);
+      if (deltaX > width * 0.25) setSidebarOpen(true);
     }
   };
 
@@ -627,20 +638,22 @@ function Chat({ username, onLogout }) {
     return last.text || '';
   };
 
-  // ===== ACCOUNT DRAWER STYLE — always an overlay, computed in JS so nothing in
-  // the stylesheet can silently override it. =====
-  const profileDrawerStyle = {
+  // ===== DRAWER STYLE — always an overlay, on every screen and in every state
+  // (welcome screen and inside a chat, browser and mobile). Computed in JS and
+  // applied inline so nothing in the stylesheet can silently override it. =====
+  const sidebarDynamicStyle = {
     position: 'fixed',
     top: 0,
     left: 0,
-    width: isMobile ? 'min(80vw, 300px)' : '300px',
+    width: isMobile ? 'min(82vw, 320px)' : '320px',
     height: '100vh',
-    zIndex: 80,
-    transform: profileDrawerOpen ? 'translateX(0)' : 'translateX(-100%)',
+    zIndex: 70,
+    transform: sidebarOpen ? 'translateX(0)' : 'translateX(-100%)',
     transition: 'transform 0.35s cubic-bezier(0.16,1,0.3,1), box-shadow 0.35s ease',
-    boxShadow: profileDrawerOpen ? '12px 0 50px rgba(0,0,0,0.45)' : 'none',
+    boxShadow: sidebarOpen ? '12px 0 50px rgba(0,0,0,0.45)' : 'none',
     background: 'rgba(10,8,25,0.98)',
     backdropFilter: 'blur(12px)',
+    opacity: 1,
   };
 
   return (
@@ -698,14 +711,12 @@ function Chat({ username, onLogout }) {
         .reconnect-spinner { width: 14px; height: 14px; border: 2px solid rgba(255,255,255,0.3); border-top-color: white; border-radius: 50%; animation: spin 0.8s linear infinite; flex-shrink: 0; }
         .reconnect-dot { width: 8px; height: 8px; background: white; border-radius: 50%; flex-shrink: 0; }
 
-        /* ===== CHAT LIST (channels + DMs) — normal, always-visible panel, NOT a drawer ===== */
         .sidebar {
-          width: 300px;
-          min-width: 300px;
           background: rgba(0,0,0,0.35);
           border-right: 1px solid rgba(255,255,255,0.07);
           display: flex; flex-direction: column;
           overflow-y: auto;
+          touch-action: pan-y;
         }
 
         .sidebar-logo { padding: 20px 20px 14px; border-bottom: 1px solid rgba(255,255,255,0.07); }
@@ -743,95 +754,68 @@ function Chat({ username, onLogout }) {
 
         .sidebar-spacer { flex: 1; min-height: 12px; }
 
-        /* ===== Bottom row in the chat list — tap it to OPEN the account drawer ===== */
-        .sidebar-user-trigger {
-          padding: 10px 14px; border-top: 1px solid rgba(255,255,255,0.07);
-          display: flex; align-items: center; gap: 8px;
-          cursor: pointer; transition: background 0.2s ease;
-        }
-        .sidebar-user-trigger:hover { background: rgba(255,255,255,0.06); }
-        .user-avatar { width: 34px; height: 34px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 700; color: white; flex-shrink: 0; overflow: hidden; padding: 0; }
+        .sidebar-user { padding: 10px 14px; border-top: 1px solid rgba(255,255,255,0.07); display: flex; align-items: center; gap: 8px; }
+        .user-avatar { width: 34px; height: 34px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 700; color: white; flex-shrink: 0; overflow: hidden; padding: 0; transition: transform 0.2s; }
+        .user-avatar:hover { transform: scale(1.08); }
         .user-info { flex: 1; overflow: hidden; }
         .user-name { font-size: 13px; font-weight: 600; color: white; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .user-status { font-size: 10px; color: #2ecc71; margin-top: 1px; }
-        .user-trigger-chevron { color: rgba(255,255,255,0.3); font-size: 18px; flex-shrink: 0; }
+
+        .icon-btn { width: 30px; height: 30px; border-radius: 9px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 14px; transition: all 0.2s; flex-shrink: 0; border: 1px solid transparent; }
+        .logout-icon-btn { background: rgba(231,76,60,0.15); border-color: rgba(231,76,60,0.3); color: #e74c3c; }
+        .logout-icon-btn:hover { background: rgba(231,76,60,0.3); }
+        .profile-icon-btn { background: rgba(102,126,234,0.15); border-color: rgba(102,126,234,0.3); color: #667eea; }
+        .profile-icon-btn:hover { background: rgba(102,126,234,0.3); }
 
         .ripple-btn { position: relative; overflow: hidden; }
         .ripple-btn::after { content: ''; position: absolute; width: 10px; height: 10px; background: rgba(255,255,255,0.3); border-radius: 50%; top: 50%; left: 50%; transform: translate(-50%,-50%) scale(0); opacity: 1; }
         .ripple-btn:active::after { animation: ripple 0.4s ease-out; }
 
         .mobile-back-btn {
-          display: none;
           background: rgba(255,255,255,0.08);
           border: 1px solid rgba(255,255,255,0.12);
           color: white;
           width: 32px; height: 32px; border-radius: 9px;
-          align-items: center; justify-content: center;
+          display: flex; align-items: center; justify-content: center;
           font-size: 17px; cursor: pointer; flex-shrink: 0;
         }
         .mobile-back-btn:hover { background: rgba(255,255,255,0.15); }
 
-        /* ===== Small button in the chat header — opens the account drawer from inside a chat ===== */
-        .chat-header-profile-btn {
-          width: 32px; height: 32px; border-radius: 50%;
-          border: 1px solid rgba(255,255,255,0.15);
-          overflow: hidden; flex-shrink: 0; cursor: pointer;
+        .mobile-menu-btn {
+          background: rgba(255,255,255,0.08);
+          border: 1px solid rgba(255,255,255,0.12);
+          width: 32px; height: 32px; border-radius: 9px;
           display: flex; align-items: center; justify-content: center;
-          font-size: 13px; font-weight: 700; color: white;
-          transition: transform 0.2s ease;
+          cursor: pointer; flex-shrink: 0;
         }
-        .chat-header-profile-btn:hover { transform: scale(1.08); }
+        .mobile-menu-btn:hover { background: rgba(255,255,255,0.15); }
+        .mobile-menu-bars { position: relative; width: 15px; height: 11px; display: block; }
+        .mobile-menu-bars span {
+          position: absolute; left: 0; width: 100%; height: 2px;
+          background: white; border-radius: 2px;
+          transition: transform 0.3s ease, opacity 0.15s ease, top 0.3s ease;
+        }
+        .mobile-menu-bars span:nth-child(1) { top: 0; }
+        .mobile-menu-bars span:nth-child(2) { top: 4.5px; }
+        .mobile-menu-bars span:nth-child(3) { top: 9px; }
+        .mobile-menu-btn.open .mobile-menu-bars span:nth-child(1) { top: 4.5px; transform: rotate(45deg); }
+        .mobile-menu-btn.open .mobile-menu-bars span:nth-child(2) { opacity: 0; }
+        .mobile-menu-btn.open .mobile-menu-bars span:nth-child(3) { top: 4.5px; transform: rotate(-45deg); }
 
-        /* ===== ACCOUNT DRAWER ===== */
-        .profile-drawer-overlay {
+        .mobile-drawer-overlay {
           position: fixed; inset: 0;
           background: rgba(0,0,0,0.55);
           backdrop-filter: blur(3px);
-          z-index: 75;
+          z-index: 65;
           animation: fadeIn 0.25s ease;
         }
-        .profile-edge-grab {
+
+        .mobile-edge-grab {
           position: fixed; top: 0; left: 0;
           height: 100%; width: 14px;
-          z-index: 78;
+          z-index: 68;
           touch-action: none;
         }
-        .profile-drawer {
-          display: flex; flex-direction: column;
-          overflow-y: auto;
-        }
-        .profile-drawer-header {
-          display: flex; align-items: center; justify-content: space-between;
-          padding: 18px 18px 14px;
-          border-bottom: 1px solid rgba(255,255,255,0.07);
-        }
-        .profile-drawer-title { font-size: 14px; font-weight: 700; color: rgba(255,255,255,0.5); text-transform: uppercase; letter-spacing: 1px; }
-        .profile-drawer-close { background: none; border: none; color: rgba(255,255,255,0.4); font-size: 20px; cursor: pointer; }
-        .profile-drawer-avatar-row {
-          display: flex; align-items: center; gap: 14px;
-          padding: 22px 18px; border-bottom: 1px solid rgba(255,255,255,0.07);
-        }
-        .profile-drawer-avatar {
-          width: 60px; height: 60px; border-radius: 50%;
-          display: flex; align-items: center; justify-content: center;
-          font-size: 24px; font-weight: 700; color: white;
-          overflow: hidden; flex-shrink: 0;
-        }
-        .profile-drawer-name { font-size: 16px; font-weight: 700; color: white; }
-        .profile-drawer-status { font-size: 12px; color: rgba(255,255,255,0.4); margin-top: 3px; }
-        .profile-drawer-item {
-          display: flex; align-items: center; gap: 12px;
-          margin: 6px 12px; padding: 13px 14px;
-          background: rgba(255,255,255,0.05);
-          border: 1px solid rgba(255,255,255,0.08);
-          border-radius: 12px;
-          color: white; font-size: 14px; font-weight: 600;
-          cursor: pointer; transition: all 0.2s ease;
-          text-align: left;
-        }
-        .profile-drawer-item:hover { background: rgba(255,255,255,0.1); }
-        .profile-drawer-item.logout { color: #e74c3c; margin-top: 14px; }
-        .profile-drawer-item.logout:hover { background: rgba(231,76,60,0.15); border-color: rgba(231,76,60,0.3); }
 
         .welcome-screen {
           flex: 1;
@@ -1073,17 +1057,6 @@ function Chat({ username, onLogout }) {
         @media (max-width: 768px) {
           .chat-layout { flex-direction: row; }
 
-          .sidebar {
-            width: 100% !important;
-            min-width: 100% !important;
-            display: ${activeRoom ? 'none' : 'flex'} !important;
-          }
-
-          .chat-main {
-            width: 100%;
-            display: ${activeRoom ? 'flex' : 'none'} !important;
-          }
-
           .sidebar-logo { padding: 18px 18px 14px !important; }
           .logo-emoji { font-size: 21px !important; }
           .logo-name { font-size: 16px !important; }
@@ -1092,11 +1065,11 @@ function Chat({ username, onLogout }) {
           .dm-item { margin: 2px 10px !important; padding: 11px 12px !important; }
           .dm-avatar { width: 44px !important; height: 44px !important; font-size: 16px !important; }
 
-          .sidebar-user-trigger { padding: 12px 16px !important; }
+          .sidebar-user { padding: 12px 16px !important; }
           .user-avatar { width: 34px !important; height: 34px !important; font-size: 14px !important; }
           .user-name { font-size: 13px !important; }
-
-          .mobile-back-btn { display: flex !important; }
+          .user-status { display: block !important; }
+          .icon-btn { width: 30px !important; height: 30px !important; font-size: 14px !important; }
 
           .chat-header { padding: 12px 14px !important; gap: 10px !important; }
           .chat-header-avatar { width: 30px !important; height: 30px !important; font-size: 14px !important; border-radius: 8px !important; }
@@ -1232,13 +1205,13 @@ function Chat({ username, onLogout }) {
       )}
 
       <div className="chat-layout">
-        {profileDrawerOpen && (
-          <div className="profile-drawer-overlay" onClick={() => setProfileDrawerOpen(false)}></div>
+        {sidebarOpen && (
+          <div className="mobile-drawer-overlay" onClick={() => setSidebarOpen(false)}></div>
         )}
 
-        {!profileDrawerOpen && (
+        {!sidebarOpen && (
           <div
-            className="profile-edge-grab"
+            className="mobile-edge-grab"
             onPointerDown={handleDragStart}
             onPointerMove={handleDragMove}
             onPointerUp={handleDragEnd}
@@ -1247,41 +1220,14 @@ function Chat({ username, onLogout }) {
         )}
 
         <div
-          className="profile-drawer"
-          ref={profileDrawerRef}
-          style={profileDrawerStyle}
+          className="sidebar"
+          ref={sidebarRef}
+          style={sidebarDynamicStyle}
           onPointerDown={handleDragStart}
           onPointerMove={handleDragMove}
           onPointerUp={handleDragEnd}
           onPointerCancel={handleDragEnd}
         >
-          <div className="profile-drawer-header">
-            <span className="profile-drawer-title">Account</span>
-            <button className="profile-drawer-close" onClick={() => setProfileDrawerOpen(false)}>✕</button>
-          </div>
-          <div className="profile-drawer-avatar-row">
-            <div className="profile-drawer-avatar" style={{ background: profile.avatar_color }}>
-              {profile.avatar_url
-                ? <img src={profile.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
-                : getInitial(username)}
-            </div>
-            <div>
-              <div className="profile-drawer-name">{username}</div>
-              <div className="profile-drawer-status">{profile.bio || '● Online'}</div>
-            </div>
-          </div>
-          <button
-            className="profile-drawer-item"
-            onClick={() => { setShowProfile(true); setProfileDrawerOpen(false); }}
-          >
-            ⚙️ Edit Profile &amp; Password
-          </button>
-          <button className="profile-drawer-item logout" onClick={handleLogoutClick}>
-            ⏻ Logout
-          </button>
-        </div>
-
-        <div className="sidebar">
           <div className="sidebar-logo">
             <div className="logo-row">
               <span className="logo-emoji">💬</span>
@@ -1348,8 +1294,7 @@ function Chat({ username, onLogout }) {
           })}
 
           <div className="sidebar-spacer"></div>
-
-          <div className="sidebar-user-trigger" onClick={() => setProfileDrawerOpen(true)}>
+          <div className="sidebar-user">
             <div className="user-avatar" style={{ background: profile.avatar_color, overflow: 'hidden', padding: 0 }}>
               {profile.avatar_url
                 ? <img src={profile.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
@@ -1359,23 +1304,45 @@ function Chat({ username, onLogout }) {
               <div className="user-name">{username}</div>
               <div className="user-status">{profile.bio || '● Online'}</div>
             </div>
-            <span className="user-trigger-chevron">›</span>
+            <button className="icon-btn profile-icon-btn ripple-btn" onClick={() => setShowProfile(true)}>⚙️</button>
+            <button className="icon-btn logout-icon-btn ripple-btn" onClick={handleLogoutClick}>⏻</button>
           </div>
         </div>
 
         <div className="chat-main" onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop} onPaste={handlePaste}>
           {activeRoom === null ? (
-            <div className="welcome-screen">
-              <div className="welcome-icon-circle">💬</div>
-              <div className="welcome-title">Nalantamil Web</div>
-              <div className="welcome-sub">Select a channel or a person from the list to start chatting. Your messages sync in real time.</div>
-              <div className="welcome-note">🔒 Private chats can be locked with a password.</div>
-            </div>
+            <>
+              <div className="chat-header">
+                <button
+                  className={`mobile-menu-btn ripple-btn ${sidebarOpen ? 'open' : ''}`}
+                  onClick={() => setSidebarOpen(!sidebarOpen)}
+                  aria-label={sidebarOpen ? 'Close menu' : 'Open menu'}
+                >
+                  <span className="mobile-menu-bars"><span></span><span></span><span></span></span>
+                </button>
+                <div className="chat-header-info">
+                  <div className="chat-header-name">💬 Nalantamil</div>
+                </div>
+              </div>
+              <div className="welcome-screen">
+                <div className="welcome-icon-circle">💬</div>
+                <div className="welcome-title">Nalantamil Web</div>
+                <div className="welcome-sub">Tap the menu to see your channels and chats. Your messages sync in real time.</div>
+                <div className="welcome-note">🔒 Private chats can be locked with a password.</div>
+              </div>
+            </>
           ) : (
             <>
               <div className="chat-header">
                 <button className="mobile-back-btn ripple-btn" onClick={backToList} aria-label="Back to chat list">
                   ←
+                </button>
+                <button
+                  className={`mobile-menu-btn ripple-btn ${sidebarOpen ? 'open' : ''}`}
+                  onClick={() => setSidebarOpen(!sidebarOpen)}
+                  aria-label={sidebarOpen ? 'Close menu' : 'Open menu'}
+                >
+                  <span className="mobile-menu-bars"><span></span><span></span><span></span></span>
                 </button>
                 <div className="chat-header-avatar">
                   {activeRoom === 'general' ? '🌐' : (() => {
@@ -1418,12 +1385,6 @@ function Chat({ username, onLogout }) {
                     onClick={() => setShowPinned(!showPinned)}>📌</button>
                 )}
                 <button className="header-btn ripple-btn" onClick={() => setShowBgPicker(!showBgPicker)}>🎨</button>
-
-                <button className="chat-header-profile-btn" onClick={() => setProfileDrawerOpen(true)} title="Account" style={{ background: profile.avatar_color }}>
-                  {profile.avatar_url
-                    ? <img src={profile.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                    : getInitial(username)}
-                </button>
 
                 {showBgPicker && (
                   <div className="bg-picker-dropdown">
