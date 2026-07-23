@@ -44,7 +44,11 @@ function Chat({ username, onLogout }) {
   const [editingId, setEditingId] = useState(null);
   const [editText, setEditText] = useState('');
   const [typingUsers, setTypingUsers] = useState([]);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+
+  // ===== DRAWER STATE — closed by default everywhere (welcome screen AND inside a chat).
+  // Opened by clicking the hamburger button or by dragging from the left edge. =====
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
   const [showBgPicker, setShowBgPicker] = useState(false);
   const [selectedBg, setSelectedBg] = useState(BACKGROUNDS[0]);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
@@ -69,8 +73,8 @@ function Chat({ username, onLogout }) {
   const [showConnected, setShowConnected] = useState(false);
   const [allUsers, setAllUsers] = useState([]);
 
-  // ===== MOBILE DETECTION (single source of truth — everything below reads this,
-  // instead of scattered window.matchMedia() calls that could disagree with the CSS) =====
+  // ===== MOBILE / NARROW-WINDOW DETECTION — single source of truth used only to size
+  // the drawer's width; stays in sync as the browser window is resized/minimized. =====
   const [isMobile, setIsMobile] = useState(() => (typeof window !== 'undefined' ? window.innerWidth <= 768 : false));
 
   // ===== NAVIGATION STATE =====
@@ -93,7 +97,7 @@ function Chat({ username, onLogout }) {
   const searchInputRef = useRef(null);
   const fileInputRef = useRef(null);
   const sidebarRef = useRef(null);
-  const touchState = useRef({ startX: 0, startY: 0, currentX: 0, dragging: false, horizontal: false });
+  const dragState = useRef({ startX: 0, startY: 0, currentX: 0, dragging: false, horizontal: false });
 
   const REACTIONS = ['👍', '❤️', '😂', '😮', '😢'];
 
@@ -124,7 +128,7 @@ function Chat({ username, onLogout }) {
     return () => { window.removeEventListener('focus', onFocus); window.removeEventListener('blur', onBlur); };
   }, []);
 
-  // ===== KEEP isMobile IN SYNC WITH ACTUAL VIEWPORT (resize / rotate) =====
+  // ===== KEEP isMobile IN SYNC WITH ACTUAL VIEWPORT (resize / rotate / browser minimize) =====
   useEffect(() => {
     const onResize = () => setIsMobile(window.innerWidth <= 768);
     window.addEventListener('resize', onResize);
@@ -167,12 +171,12 @@ function Chat({ username, onLogout }) {
     }
   }, [activeRoom, activeDMUser, username]);
 
-  // ===== ON MOBILE, CLOSE THE DRAWER WHENEVER YOU LAND ON/SWITCH A CHAT =====
+  // ===== CLOSE THE DRAWER WHENEVER YOU LAND ON/SWITCH A CHAT (both mobile & desktop) =====
   useEffect(() => {
-    if (activeRoom && isMobile) {
+    if (activeRoom) {
       setSidebarOpen(false);
     }
-  }, [activeRoom, activeDMUser, isMobile]);
+  }, [activeRoom, activeDMUser]);
 
   const getDateLabel = (timestamp) => {
     if (!timestamp) return '';
@@ -228,7 +232,7 @@ function Chat({ username, onLogout }) {
     setUnreadDMs(prev => ({ ...prev, [roomId]: 0 }));
   };
 
-  // ===== BACK TO LIST (mobile) =====
+  // ===== BACK TO LIST =====
   const backToList = () => {
     setActiveRoom(null);
     setActiveDMUser(null);
@@ -544,53 +548,54 @@ function Chat({ username, onLogout }) {
     onLogout();
   };
 
-  // ===== MOBILE DRAWER SWIPE GESTURES =====
-  // Drag left-to-right to open, right-to-left to close. Only active on mobile,
-  // and only once a chat is open (the full-list screen doesn't need it).
-  const handleTouchStart = (e) => {
-    if (!isMobile || !activeRoom) return;
-    const t = e.touches[0];
-    touchState.current = { startX: t.clientX, startY: t.clientY, currentX: t.clientX, dragging: true, horizontal: false };
+  // ===== DRAWER DRAG GESTURES (Pointer Events — works identically with a mouse on
+  // desktop/browser and with a finger on mobile). Drag left-to-right opens it, drag
+  // right-to-left closes it — from anywhere on the drawer, or from the left-edge
+  // strip when it's closed. =====
+  const handleDragStart = (e) => {
+    const x = e.clientX, y = e.clientY;
+    dragState.current = { startX: x, startY: y, currentX: x, dragging: true, horizontal: false };
     if (sidebarRef.current) sidebarRef.current.style.transition = 'none';
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch (err) {}
   };
 
-  const handleTouchMove = (e) => {
-    if (!isMobile || !activeRoom) return;
-    const ts = touchState.current;
-    if (!ts.dragging || !sidebarRef.current) return;
-    const t = e.touches[0];
-    ts.currentX = t.clientX;
-    const deltaX = t.clientX - ts.startX;
-    const deltaY = t.clientY - ts.startY;
+  const handleDragMove = (e) => {
+    const ds = dragState.current;
+    if (!ds.dragging || !sidebarRef.current) return;
+    const x = e.clientX, y = e.clientY;
+    ds.currentX = x;
+    const deltaX = x - ds.startX;
+    const deltaY = y - ds.startY;
 
-    if (!ts.horizontal) {
+    if (!ds.horizontal) {
       if (Math.abs(deltaX) < 8 && Math.abs(deltaY) < 8) return;
-      ts.horizontal = Math.abs(deltaX) > Math.abs(deltaY);
-      if (!ts.horizontal) return;
+      ds.horizontal = Math.abs(deltaX) > Math.abs(deltaY);
+      if (!ds.horizontal) { ds.dragging = false; return; }
+      document.body.style.userSelect = 'none';
     }
 
-    const width = sidebarRef.current.offsetWidth || 280;
+    const width = sidebarRef.current.offsetWidth || 300;
     if (sidebarOpen) {
-      const x = Math.min(0, deltaX);
-      sidebarRef.current.style.transform = `translateX(${x}px)`;
+      const tx = Math.min(0, deltaX);
+      sidebarRef.current.style.transform = `translateX(${tx}px)`;
     } else {
-      const x = Math.min(0, -width + Math.max(0, deltaX));
-      sidebarRef.current.style.transform = `translateX(${x}px)`;
+      const tx = Math.min(0, -width + Math.max(0, deltaX));
+      sidebarRef.current.style.transform = `translateX(${tx}px)`;
     }
   };
 
-  const handleTouchEnd = () => {
-    if (!isMobile || !activeRoom) return;
-    const ts = touchState.current;
-    if (!ts.dragging) return;
-    ts.dragging = false;
+  const handleDragEnd = () => {
+    const ds = dragState.current;
+    if (!ds.dragging) return;
+    ds.dragging = false;
+    document.body.style.userSelect = '';
     if (sidebarRef.current) {
       sidebarRef.current.style.transition = '';
       sidebarRef.current.style.transform = '';
     }
-    if (!ts.horizontal) return;
-    const width = sidebarRef.current?.offsetWidth || 280;
-    const deltaX = ts.currentX - ts.startX;
+    if (!ds.horizontal) return;
+    const width = sidebarRef.current?.offsetWidth || 300;
+    const deltaX = ds.currentX - ds.startX;
     if (sidebarOpen) {
       if (deltaX < -width * 0.25) setSidebarOpen(false);
     } else {
@@ -633,43 +638,23 @@ function Chat({ username, onLogout }) {
     return last.text || '';
   };
 
-  // ===== DYNAMIC SIDEBAR STYLE — computed in JS and applied inline so it can never
-  // be silently overridden by a stylesheet rule (this was the actual bug: CSS
-  // `!important` rules were winning over the state changes) =====
-  const sidebarDynamicStyle = isMobile
-    ? (activeRoom
-        ? {
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            width: '82vw',
-            minWidth: 0,
-            maxWidth: '320px',
-            height: '100vh',
-            zIndex: 70,
-            transform: sidebarOpen ? 'translateX(0)' : 'translateX(-100%)',
-            transition: 'transform 0.35s cubic-bezier(0.16,1,0.3,1), box-shadow 0.35s ease',
-            boxShadow: sidebarOpen ? '12px 0 50px rgba(102,126,234,0.25)' : 'none',
-            background: 'rgba(10,8,25,0.98)',
-            backdropFilter: 'blur(12px)',
-            opacity: 1,
-          }
-        : {
-            position: 'relative',
-            width: '100%',
-            minWidth: '100%',
-            maxWidth: '100%',
-            height: '100vh',
-            transform: 'none',
-            opacity: 1,
-          })
-    : {
-        width: sidebarOpen ? '300px' : '0px',
-        minWidth: sidebarOpen ? '300px' : '0px',
-        opacity: sidebarOpen ? 1 : 0,
-      };
-
-  const chatMainDynamicStyle = isMobile ? { display: activeRoom ? 'flex' : 'none' } : undefined;
+  // ===== DRAWER STYLE — always an overlay, on every screen and in every state
+  // (welcome screen and inside a chat, browser and mobile). Computed in JS and
+  // applied inline so nothing in the stylesheet can silently override it. =====
+  const sidebarDynamicStyle = {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    width: isMobile ? 'min(82vw, 320px)' : '320px',
+    height: '100vh',
+    zIndex: 70,
+    transform: sidebarOpen ? 'translateX(0)' : 'translateX(-100%)',
+    transition: 'transform 0.35s cubic-bezier(0.16,1,0.3,1), box-shadow 0.35s ease',
+    boxShadow: sidebarOpen ? '12px 0 50px rgba(0,0,0,0.45)' : 'none',
+    background: 'rgba(10,8,25,0.98)',
+    backdropFilter: 'blur(12px)',
+    opacity: 1,
+  };
 
   return (
     <>
@@ -730,8 +715,8 @@ function Chat({ username, onLogout }) {
           background: rgba(0,0,0,0.35);
           border-right: 1px solid rgba(255,255,255,0.07);
           display: flex; flex-direction: column;
-          transition: width 0.35s cubic-bezier(0.4,0,0.2,1), min-width 0.35s cubic-bezier(0.4,0,0.2,1), opacity 0.3s ease;
-          overflow: hidden;
+          overflow-y: auto;
+          touch-action: pan-y;
         }
 
         .sidebar-logo { padding: 20px 20px 14px; border-bottom: 1px solid rgba(255,255,255,0.07); }
@@ -803,6 +788,7 @@ function Chat({ username, onLogout }) {
           display: flex; align-items: center; justify-content: center;
           cursor: pointer; flex-shrink: 0;
         }
+        .mobile-menu-btn:hover { background: rgba(255,255,255,0.15); }
         .mobile-menu-bars { position: relative; width: 15px; height: 11px; display: block; }
         .mobile-menu-bars span {
           position: absolute; left: 0; width: 100%; height: 2px;
@@ -828,6 +814,7 @@ function Chat({ username, onLogout }) {
           position: fixed; top: 0; left: 0;
           height: 100%; width: 14px;
           z-index: 68;
+          touch-action: none;
         }
 
         .welcome-screen {
@@ -865,12 +852,9 @@ function Chat({ username, onLogout }) {
           border-radius: 20px; border: 1px solid rgba(255,255,255,0.07);
         }
 
-        .chat-main { flex: 1; display: flex; flex-direction: column; overflow: hidden; position: relative; }
+        .chat-main { flex: 1; display: flex; flex-direction: column; overflow: hidden; position: relative; width: 100%; }
 
         .chat-header { padding: 14px 22px; background: rgba(0,0,0,0.2); border-bottom: 1px solid rgba(255,255,255,0.07); display: flex; align-items: center; gap: 12px; position: relative; }
-
-        .sidebar-toggle { background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.12); color: white; width: 30px; height: 30px; border-radius: 9px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 14px; transition: all 0.3s; flex-shrink: 0; }
-        .sidebar-toggle:hover { background: rgba(255,255,255,0.15); }
 
         .chat-header-avatar { width: 36px; height: 36px; border-radius: 9px; background: linear-gradient(135deg, #667eea, #764ba2); display: flex; align-items: center; justify-content: center; font-size: 17px; flex-shrink: 0; overflow: hidden; }
         .chat-header-info { flex: 1; }
@@ -1073,14 +1057,6 @@ function Chat({ username, onLogout }) {
         @media (max-width: 768px) {
           .chat-layout { flex-direction: row; }
 
-          .sidebar {
-            border-right: none;
-            flex-direction: column !important;
-            padding: 0 !important;
-            overflow-y: auto !important;
-            display: flex !important;
-          }
-
           .sidebar-logo { padding: 18px 18px 14px !important; }
           .logo-emoji { font-size: 21px !important; }
           .logo-name { font-size: 16px !important; }
@@ -1089,7 +1065,6 @@ function Chat({ username, onLogout }) {
           .dm-item { margin: 2px 10px !important; padding: 11px 12px !important; }
           .dm-avatar { width: 44px !important; height: 44px !important; font-size: 16px !important; }
 
-          .sidebar-spacer { display: block !important; }
           .sidebar-user { padding: 12px 16px !important; }
           .user-avatar { width: 34px !important; height: 34px !important; font-size: 14px !important; }
           .user-name { font-size: 13px !important; }
@@ -1230,16 +1205,17 @@ function Chat({ username, onLogout }) {
       )}
 
       <div className="chat-layout">
-        {isMobile && activeRoom && sidebarOpen && (
+        {sidebarOpen && (
           <div className="mobile-drawer-overlay" onClick={() => setSidebarOpen(false)}></div>
         )}
 
-        {isMobile && activeRoom && !sidebarOpen && (
+        {!sidebarOpen && (
           <div
             className="mobile-edge-grab"
-            onTouchStart={handleTouchStart}
-            onTouchMove={handleTouchMove}
-            onTouchEnd={handleTouchEnd}
+            onPointerDown={handleDragStart}
+            onPointerMove={handleDragMove}
+            onPointerUp={handleDragEnd}
+            onPointerCancel={handleDragEnd}
           ></div>
         )}
 
@@ -1247,9 +1223,10 @@ function Chat({ username, onLogout }) {
           className="sidebar"
           ref={sidebarRef}
           style={sidebarDynamicStyle}
-          onTouchStart={handleTouchStart}
-          onTouchMove={handleTouchMove}
-          onTouchEnd={handleTouchEnd}
+          onPointerDown={handleDragStart}
+          onPointerMove={handleDragMove}
+          onPointerUp={handleDragEnd}
+          onPointerCancel={handleDragEnd}
         >
           <div className="sidebar-logo">
             <div className="logo-row">
@@ -1332,36 +1309,41 @@ function Chat({ username, onLogout }) {
           </div>
         </div>
 
-        <div className="chat-main" style={chatMainDynamicStyle} onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop} onPaste={handlePaste}>
+        <div className="chat-main" onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop} onPaste={handlePaste}>
           {activeRoom === null ? (
-            <div className="welcome-screen">
-              <div className="welcome-icon-circle">💬</div>
-              <div className="welcome-title">Nalantamil Web</div>
-              <div className="welcome-sub">Select a channel or a person from the list to start chatting. Your messages sync in real time.</div>
-              <div className="welcome-note">🔒 Private chats can be locked with a password.</div>
-            </div>
+            <>
+              <div className="chat-header">
+                <button
+                  className={`mobile-menu-btn ripple-btn ${sidebarOpen ? 'open' : ''}`}
+                  onClick={() => setSidebarOpen(!sidebarOpen)}
+                  aria-label={sidebarOpen ? 'Close menu' : 'Open menu'}
+                >
+                  <span className="mobile-menu-bars"><span></span><span></span><span></span></span>
+                </button>
+                <div className="chat-header-info">
+                  <div className="chat-header-name">💬 Nalantamil</div>
+                </div>
+              </div>
+              <div className="welcome-screen">
+                <div className="welcome-icon-circle">💬</div>
+                <div className="welcome-title">Nalantamil Web</div>
+                <div className="welcome-sub">Tap the menu to see your channels and chats. Your messages sync in real time.</div>
+                <div className="welcome-note">🔒 Private chats can be locked with a password.</div>
+              </div>
+            </>
           ) : (
             <>
               <div className="chat-header">
-                {!isMobile && (
-                  <button className="sidebar-toggle ripple-btn" onClick={() => setSidebarOpen(!sidebarOpen)} title="Collapse list">
-                    {sidebarOpen ? '◀' : '▶'}
-                  </button>
-                )}
-                {isMobile && (
-                  <button className="mobile-back-btn ripple-btn" onClick={backToList} aria-label="Back to chat list">
-                    ←
-                  </button>
-                )}
-                {isMobile && (
-                  <button
-                    className={`mobile-menu-btn ripple-btn ${sidebarOpen ? 'open' : ''}`}
-                    onClick={() => setSidebarOpen(!sidebarOpen)}
-                    aria-label={sidebarOpen ? 'Close menu' : 'Open menu'}
-                  >
-                    <span className="mobile-menu-bars"><span></span><span></span><span></span></span>
-                  </button>
-                )}
+                <button className="mobile-back-btn ripple-btn" onClick={backToList} aria-label="Back to chat list">
+                  ←
+                </button>
+                <button
+                  className={`mobile-menu-btn ripple-btn ${sidebarOpen ? 'open' : ''}`}
+                  onClick={() => setSidebarOpen(!sidebarOpen)}
+                  aria-label={sidebarOpen ? 'Close menu' : 'Open menu'}
+                >
+                  <span className="mobile-menu-bars"><span></span><span></span><span></span></span>
+                </button>
                 <div className="chat-header-avatar">
                   {activeRoom === 'general' ? '🌐' : (() => {
                     const dmUser = allUsers.find(u => u.username === activeDMUser);
