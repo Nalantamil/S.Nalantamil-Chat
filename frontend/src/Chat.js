@@ -70,9 +70,6 @@ function Chat({ username, onLogout }) {
   const [allUsers, setAllUsers] = useState([]);
 
   // ===== NAVIGATION STATE =====
-  // Starts as null on purpose: no chat is open when you first log in.
-  // Desktop shows a welcome/greeting panel on the right until you pick
-  // something. Mobile shows only the chat list until you tap a chat.
   const [activeRoom, setActiveRoom] = useState(null); // null | 'general' | 'dm'
   const [activeDMUser, setActiveDMUser] = useState(null);
 
@@ -91,6 +88,8 @@ function Chat({ username, onLogout }) {
   const typingTimeoutRef = useRef(null);
   const searchInputRef = useRef(null);
   const fileInputRef = useRef(null);
+  const sidebarRef = useRef(null);
+  const touchState = useRef({ startX: 0, startY: 0, currentX: 0, dragging: false, horizontal: false });
 
   const REACTIONS = ['👍', '❤️', '😂', '😮', '😢'];
 
@@ -129,6 +128,40 @@ function Chat({ username, onLogout }) {
     const interval = setInterval(wakeUp, 4 * 60 * 1000);
     return () => clearInterval(interval);
   }, []);
+
+  // ===== RESTORE LAST OPEN CHAT AFTER A REFRESH =====
+  useEffect(() => {
+    const savedRoom = localStorage.getItem(`chat_activeRoom_${username}`);
+    const savedDMUser = localStorage.getItem(`chat_activeDMUser_${username}`);
+    if (savedRoom === 'general') {
+      setActiveRoom('general');
+    } else if (savedRoom === 'dm' && savedDMUser) {
+      openDM(savedDMUser);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ===== PERSIST WHICHEVER CHAT IS OPEN, SO A REFRESH RESTORES IT =====
+  useEffect(() => {
+    if (activeRoom) {
+      localStorage.setItem(`chat_activeRoom_${username}`, activeRoom);
+      if (activeRoom === 'dm' && activeDMUser) {
+        localStorage.setItem(`chat_activeDMUser_${username}`, activeDMUser);
+      } else {
+        localStorage.removeItem(`chat_activeDMUser_${username}`);
+      }
+    } else {
+      localStorage.removeItem(`chat_activeRoom_${username}`);
+      localStorage.removeItem(`chat_activeDMUser_${username}`);
+    }
+  }, [activeRoom, activeDMUser, username]);
+
+  // ===== ON MOBILE, CLOSE THE DRAWER WHENEVER YOU LAND ON/SWITCH A CHAT =====
+  useEffect(() => {
+    if (activeRoom && window.matchMedia('(max-width: 768px)').matches) {
+      setSidebarOpen(false);
+    }
+  }, [activeRoom, activeDMUser]);
 
   const getDateLabel = (timestamp) => {
     if (!timestamp) return '';
@@ -238,9 +271,6 @@ function Chat({ username, onLogout }) {
 
     socket.on('message', (msg) => {
       setMessages(prev => [...prev, { ...msg, reactions: {} }]);
-      // Count as unread if the tab isn't focused OR the general channel
-      // isn't the screen currently being viewed (since there's no
-      // "always visible" general chat anymore).
       if ((!isTabFocused || activeRoom !== 'general') && msg.username !== username) {
         setUnreadCount(prev => prev + 1);
       }
@@ -496,6 +526,67 @@ function Chat({ username, onLogout }) {
     } catch (err) { alert('Failed to remove lock'); }
   };
 
+  // ===== LOGOUT: clear saved navigation state too =====
+  const handleLogoutClick = () => {
+    localStorage.removeItem(`chat_activeRoom_${username}`);
+    localStorage.removeItem(`chat_activeDMUser_${username}`);
+    onLogout();
+  };
+
+  // ===== MOBILE DRAWER SWIPE GESTURES =====
+  // Drag left-to-right to open, right-to-left to close. Only active on mobile,
+  // and only once a chat is open (the full-list screen doesn't need it).
+  const handleTouchStart = (e) => {
+    if (!window.matchMedia('(max-width: 768px)').matches || !activeRoom) return;
+    const t = e.touches[0];
+    touchState.current = { startX: t.clientX, startY: t.clientY, currentX: t.clientX, dragging: true, horizontal: false };
+    if (sidebarRef.current) sidebarRef.current.style.transition = 'none';
+  };
+
+  const handleTouchMove = (e) => {
+    if (!window.matchMedia('(max-width: 768px)').matches || !activeRoom) return;
+    const ts = touchState.current;
+    if (!ts.dragging || !sidebarRef.current) return;
+    const t = e.touches[0];
+    ts.currentX = t.clientX;
+    const deltaX = t.clientX - ts.startX;
+    const deltaY = t.clientY - ts.startY;
+
+    if (!ts.horizontal) {
+      if (Math.abs(deltaX) < 8 && Math.abs(deltaY) < 8) return;
+      ts.horizontal = Math.abs(deltaX) > Math.abs(deltaY);
+      if (!ts.horizontal) return;
+    }
+
+    const width = sidebarRef.current.offsetWidth || 280;
+    if (sidebarOpen) {
+      const x = Math.min(0, deltaX);
+      sidebarRef.current.style.transform = `translateX(${x}px)`;
+    } else {
+      const x = Math.min(0, -width + Math.max(0, deltaX));
+      sidebarRef.current.style.transform = `translateX(${x}px)`;
+    }
+  };
+
+  const handleTouchEnd = () => {
+    if (!window.matchMedia('(max-width: 768px)').matches || !activeRoom) return;
+    const ts = touchState.current;
+    if (!ts.dragging) return;
+    ts.dragging = false;
+    if (sidebarRef.current) {
+      sidebarRef.current.style.transition = '';
+      sidebarRef.current.style.transform = '';
+    }
+    if (!ts.horizontal) return;
+    const width = sidebarRef.current?.offsetWidth || 280;
+    const deltaX = ts.currentX - ts.startX;
+    if (sidebarOpen) {
+      if (deltaX < -width * 0.25) setSidebarOpen(false);
+    } else {
+      if (deltaX > width * 0.25) setSidebarOpen(true);
+    }
+  };
+
   const formatTime = (timestamp) => {
     if (!timestamp) return '';
     return new Date(timestamp + 'Z').toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
@@ -661,6 +752,32 @@ function Chat({ username, onLogout }) {
           font-size: 17px; cursor: pointer; flex-shrink: 0;
         }
         .mobile-back-btn:hover { background: rgba(255,255,255,0.15); }
+
+        /* ===== MOBILE HAMBURGER (morphs into an X) — opens/closes the slide drawer ===== */
+        .mobile-menu-btn {
+          display: none;
+          background: rgba(255,255,255,0.08);
+          border: 1px solid rgba(255,255,255,0.12);
+          width: 32px; height: 32px; border-radius: 9px;
+          align-items: center; justify-content: center;
+          cursor: pointer; flex-shrink: 0;
+        }
+        .mobile-menu-bars { position: relative; width: 15px; height: 11px; display: block; }
+        .mobile-menu-bars span {
+          position: absolute; left: 0; width: 100%; height: 2px;
+          background: white; border-radius: 2px;
+          transition: transform 0.3s ease, opacity 0.15s ease, top 0.3s ease;
+        }
+        .mobile-menu-bars span:nth-child(1) { top: 0; }
+        .mobile-menu-bars span:nth-child(2) { top: 4.5px; }
+        .mobile-menu-bars span:nth-child(3) { top: 9px; }
+        .mobile-menu-btn.open .mobile-menu-bars span:nth-child(1) { top: 4.5px; transform: rotate(45deg); }
+        .mobile-menu-btn.open .mobile-menu-bars span:nth-child(2) { opacity: 0; }
+        .mobile-menu-btn.open .mobile-menu-bars span:nth-child(3) { top: 4.5px; transform: rotate(-45deg); }
+
+        /* ===== MOBILE DRAWER OVERLAY + EDGE SWIPE STRIP — hidden on desktop ===== */
+        .mobile-drawer-overlay { display: none; }
+        .mobile-edge-grab { display: none; }
 
         /* ===== WELCOME / GREETING SCREEN (desktop right panel) ===== */
         .welcome-screen {
@@ -907,22 +1024,55 @@ function Chat({ username, onLogout }) {
           .chat-layout { flex-direction: row; }
 
           .sidebar {
-            width: 100% !important;
-            min-width: 100% !important;
-            max-width: 100% !important;
-            height: 100vh;
             opacity: 1 !important;
             border-right: none;
             flex-direction: column !important;
             padding: 0 !important;
             overflow-y: auto !important;
-            display: ${activeRoom ? 'none' : 'flex'} !important;
+            display: flex !important;
+            ${activeRoom ? `
+              position: fixed;
+              top: 0; left: 0;
+              width: 82vw !important;
+              min-width: 0 !important;
+              max-width: 320px !important;
+              height: 100vh;
+              z-index: 70;
+              transform: ${sidebarOpen ? 'translateX(0)' : 'translateX(-100%)'};
+              transition: transform 0.35s cubic-bezier(0.16,1,0.3,1), box-shadow 0.35s ease;
+              box-shadow: ${sidebarOpen ? '12px 0 50px rgba(102,126,234,0.25)' : 'none'};
+              background: rgba(10,8,25,0.98);
+              backdrop-filter: blur(12px);
+            ` : `
+              position: relative;
+              width: 100% !important;
+              min-width: 100% !important;
+              max-width: 100% !important;
+              height: 100vh;
+              transform: none;
+            `}
           }
 
           .chat-main {
             width: 100%;
             height: 100vh;
             display: ${activeRoom ? 'flex' : 'none'} !important;
+          }
+
+          .mobile-drawer-overlay {
+            display: ${(activeRoom && sidebarOpen) ? 'block' : 'none'};
+            position: fixed; inset: 0;
+            background: rgba(0,0,0,0.55);
+            backdrop-filter: blur(3px);
+            z-index: 65;
+            animation: fadeIn 0.25s ease;
+          }
+
+          .mobile-edge-grab {
+            display: ${(activeRoom && !sidebarOpen) ? 'block' : 'none'};
+            position: fixed; top: 0; left: 0;
+            height: 100%; width: 14px;
+            z-index: 68;
           }
 
           .sidebar-logo { padding: 18px 18px 14px !important; }
@@ -942,6 +1092,7 @@ function Chat({ username, onLogout }) {
 
           .sidebar-toggle { display: none !important; }
           .mobile-back-btn { display: flex !important; }
+          .mobile-menu-btn { display: flex !important; }
 
           .chat-header { padding: 12px 14px !important; gap: 10px !important; }
           .chat-header-avatar { width: 30px !important; height: 30px !important; font-size: 14px !important; border-radius: 8px !important; }
@@ -1077,7 +1228,22 @@ function Chat({ username, onLogout }) {
       )}
 
       <div className="chat-layout">
-        <div className="sidebar">
+        <div className="mobile-drawer-overlay" onClick={() => setSidebarOpen(false)}></div>
+
+        <div
+          className="mobile-edge-grab"
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
+        ></div>
+
+        <div
+          className="sidebar"
+          ref={sidebarRef}
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
+        >
           <div className="sidebar-logo">
             <div className="logo-row">
               <span className="logo-emoji">💬</span>
@@ -1155,7 +1321,7 @@ function Chat({ username, onLogout }) {
               <div className="user-status">{profile.bio || '● Online'}</div>
             </div>
             <button className="icon-btn profile-icon-btn ripple-btn" onClick={() => setShowProfile(true)}>⚙️</button>
-            <button className="icon-btn logout-icon-btn ripple-btn" onClick={onLogout}>⏻</button>
+            <button className="icon-btn logout-icon-btn ripple-btn" onClick={handleLogoutClick}>⏻</button>
           </div>
         </div>
 
@@ -1175,6 +1341,13 @@ function Chat({ username, onLogout }) {
                 </button>
                 <button className="mobile-back-btn ripple-btn" onClick={backToList} aria-label="Back to chat list">
                   ←
+                </button>
+                <button
+                  className={`mobile-menu-btn ripple-btn ${sidebarOpen ? 'open' : ''}`}
+                  onClick={() => setSidebarOpen(!sidebarOpen)}
+                  aria-label={sidebarOpen ? 'Close menu' : 'Open menu'}
+                >
+                  <span className="mobile-menu-bars"><span></span><span></span><span></span></span>
                 </button>
                 <div className="chat-header-avatar">
                   {activeRoom === 'general' ? '🌐' : (() => {
