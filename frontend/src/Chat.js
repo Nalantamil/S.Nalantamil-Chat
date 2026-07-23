@@ -1,5 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { useMemo } from "react";
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { io } from 'socket.io-client';
 import axios from 'axios';
 
@@ -69,8 +68,14 @@ function Chat({ username, onLogout }) {
   const [isReconnecting, setIsReconnecting] = useState(false);
   const [showConnected, setShowConnected] = useState(false);
   const [allUsers, setAllUsers] = useState([]);
-  const [activeRoom, setActiveRoom] = useState('general');
+
+  // ===== NAVIGATION STATE =====
+  // Starts as null on purpose: no chat is open when you first log in.
+  // Desktop shows a welcome/greeting panel on the right until you pick
+  // something. Mobile shows only the chat list until you tap a chat.
+  const [activeRoom, setActiveRoom] = useState(null); // null | 'general' | 'dm'
   const [activeDMUser, setActiveDMUser] = useState(null);
+
   const [dmMessages, setDmMessages] = useState({});
   const [showLockModal, setShowLockModal] = useState(false);
   const [lockPassword, setLockPassword] = useState('');
@@ -79,26 +84,27 @@ function Chat({ username, onLogout }) {
   const [lockedRooms, setLockedRooms] = useState({});
   const [unreadDMs, setUnreadDMs] = useState({});
 
-  // ===== NEW: DM SORT TRACKING =====
+  // ===== DM SORT TRACKING =====
   const [dmLastMessage, setDmLastMessage] = useState({});
 
   const messagesEndRef = useRef(null);
   const typingTimeoutRef = useRef(null);
   const searchInputRef = useRef(null);
   const fileInputRef = useRef(null);
-  const sidebarRef = useRef(null);
-  const touchState = useRef({ startX: 0, startY: 0, currentX: 0, dragging: false, horizontal: false });
 
   const REACTIONS = ['👍', '❤️', '😂', '😮', '😢'];
 
-  const currentRoomId = activeRoom === 'general' ? 'general' : getDMRoomId(username, activeDMUser);
-  const currentMessages = useMemo(() => {
-  return activeRoom === "general"
-    ? messages
-    : (dmMessages[currentRoomId] || []);
-}, [activeRoom, messages, dmMessages, currentRoomId]);
+  const currentRoomId = activeRoom === 'general'
+    ? 'general'
+    : (activeRoom === 'dm' && activeDMUser ? getDMRoomId(username, activeDMUser) : null);
 
-  // ===== SORTED DM USERS (WhatsApp-style) =====
+  const currentMessages = useMemo(() => {
+    if (activeRoom === 'general') return messages;
+    if (activeRoom === 'dm') return dmMessages[currentRoomId] || [];
+    return [];
+  }, [activeRoom, messages, dmMessages, currentRoomId]);
+
+  // ===== SORTED DM USERS (WhatsApp-style, most recent first) =====
   const sortedUsers = [...allUsers].sort((a, b) => {
     const roomA = getDMRoomId(username, a.username);
     const roomB = getDMRoomId(username, b.username);
@@ -107,15 +113,8 @@ function Chat({ username, onLogout }) {
     return timeB - timeA;
   });
 
-  // ===== MOBILE DRAWER: start closed on small screens =====
   useEffect(() => {
-    if (window.matchMedia('(max-width: 768px)').matches) {
-      setSidebarOpen(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    const onFocus = () => { setIsTabFocused(true); setUnreadCount(0); };
+    const onFocus = () => { setIsTabFocused(true); };
     const onBlur = () => setIsTabFocused(false);
     window.addEventListener('focus', onFocus);
     window.addEventListener('blur', onBlur);
@@ -183,7 +182,12 @@ function Chat({ username, onLogout }) {
     setActiveRoom('dm');
     await fetchDMMessages(roomId);
     setUnreadDMs(prev => ({ ...prev, [roomId]: 0 }));
-    if (window.matchMedia('(max-width: 768px)').matches) setSidebarOpen(false);
+  };
+
+  // ===== BACK TO LIST (mobile) =====
+  const backToList = () => {
+    setActiveRoom(null);
+    setActiveDMUser(null);
   };
 
   useEffect(() => {
@@ -234,7 +238,12 @@ function Chat({ username, onLogout }) {
 
     socket.on('message', (msg) => {
       setMessages(prev => [...prev, { ...msg, reactions: {} }]);
-      if (!isTabFocused && msg.username !== username) setUnreadCount(prev => prev + 1);
+      // Count as unread if the tab isn't focused OR the general channel
+      // isn't the screen currently being viewed (since there's no
+      // "always visible" general chat anymore).
+      if ((!isTabFocused || activeRoom !== 'general') && msg.username !== username) {
+        setUnreadCount(prev => prev + 1);
+      }
     });
 
     socket.on('dm_message', (msg) => {
@@ -245,7 +254,6 @@ function Chat({ username, onLogout }) {
       }));
       const ts = msg.timestamp ? new Date(msg.timestamp + 'Z').getTime() : Date.now();
       setDmLastMessage(prev => ({ ...prev, [roomId]: ts }));
-      // Always increment unread if not currently viewing that DM
       if (roomId !== currentRoomId || activeRoom !== 'dm') {
         if (msg.username !== username) {
           setUnreadDMs(prev => ({ ...prev, [roomId]: (prev[roomId] || 0) + 1 }));
@@ -334,7 +342,7 @@ function Chat({ username, onLogout }) {
         username, text: input,
         reply_to: replyingTo ? { _id: replyingTo._id, username: replyingTo.username, text: replyingTo.text } : null
       });
-    } else {
+    } else if (activeRoom === 'dm') {
       socket.emit('send_dm', {
         username, text: input, room_id: currentRoomId,
         reply_to: replyingTo ? { _id: replyingTo._id, username: replyingTo.username, text: replyingTo.text } : null
@@ -422,7 +430,7 @@ function Chat({ username, onLogout }) {
       const replyData = replyingTo ? { _id: replyingTo._id, username: replyingTo.username, text: replyingTo.text } : null;
       if (activeRoom === 'general') {
         socket.emit('send_message', { username, text, reply_to: replyData });
-      } else {
+      } else if (activeRoom === 'dm') {
         socket.emit('send_dm', { username, text, room_id: currentRoomId, reply_to: replyData });
       }
       setReplyingTo(null); cancelImage(); setInput('');
@@ -486,60 +494,6 @@ function Chat({ username, onLogout }) {
       setChatLocks(prev => ({ ...prev, [currentRoomId]: { locked: false } }));
       alert('🔓 Lock removed!');
     } catch (err) { alert('Failed to remove lock'); }
-  };
-
-  // ===== MOBILE DRAWER SWIPE GESTURES =====
-  const isMobileViewport = () => window.matchMedia('(max-width: 768px)').matches;
-
-  const handleTouchStart = (e) => {
-    if (!isMobileViewport()) return;
-    const t = e.touches[0];
-    touchState.current = { startX: t.clientX, startY: t.clientY, currentX: t.clientX, dragging: true, horizontal: false };
-    if (sidebarRef.current) sidebarRef.current.style.transition = 'none';
-  };
-
-  const handleTouchMove = (e) => {
-    if (!isMobileViewport()) return;
-    const ts = touchState.current;
-    if (!ts.dragging || !sidebarRef.current) return;
-    const t = e.touches[0];
-    ts.currentX = t.clientX;
-    const deltaX = t.clientX - ts.startX;
-    const deltaY = t.clientY - ts.startY;
-
-    if (!ts.horizontal) {
-      if (Math.abs(deltaX) < 8 && Math.abs(deltaY) < 8) return;
-      ts.horizontal = Math.abs(deltaX) > Math.abs(deltaY);
-      if (!ts.horizontal) return;
-    }
-
-    const width = sidebarRef.current.offsetWidth || 280;
-    if (sidebarOpen) {
-      const x = Math.min(0, deltaX);
-      sidebarRef.current.style.transform = `translateX(${x}px)`;
-    } else {
-      const x = Math.min(0, -width + Math.max(0, deltaX));
-      sidebarRef.current.style.transform = `translateX(${x}px)`;
-    }
-  };
-
-  const handleTouchEnd = () => {
-    if (!isMobileViewport()) return;
-    const ts = touchState.current;
-    if (!ts.dragging) return;
-    ts.dragging = false;
-    if (sidebarRef.current) {
-      sidebarRef.current.style.transition = '';
-      sidebarRef.current.style.transform = '';
-    }
-    if (!ts.horizontal) return;
-    const width = sidebarRef.current?.offsetWidth || 280;
-    const deltaX = ts.currentX - ts.startX;
-    if (sidebarOpen) {
-      if (deltaX < -width * 0.25) setSidebarOpen(false);
-    } else {
-      if (deltaX > width * 0.25) setSidebarOpen(true);
-    }
   };
 
   const formatTime = (timestamp) => {
@@ -634,21 +588,14 @@ function Chat({ username, onLogout }) {
 
         .sidebar {
           position: relative;
-          width: ${sidebarOpen ? '280px' : '0px'};
-          min-width: ${sidebarOpen ? '280px' : '0px'};
+          width: ${sidebarOpen ? '300px' : '0px'};
+          min-width: ${sidebarOpen ? '300px' : '0px'};
           background: rgba(0,0,0,0.35);
           border-right: 1px solid rgba(255,255,255,0.07);
           display: flex; flex-direction: column;
-          transition: width 0.3s ease, min-width 0.3s ease, opacity 0.3s ease;
+          transition: width 0.35s cubic-bezier(0.4,0,0.2,1), min-width 0.35s cubic-bezier(0.4,0,0.2,1), opacity 0.3s ease;
           overflow: hidden;
           opacity: ${sidebarOpen ? '1' : '0'};
-        }
-
-        .sidebar-glow {
-          position: absolute; inset-inline: 0; top: 0; height: 140px;
-          background: linear-gradient(180deg, rgba(102,126,234,0.18), transparent);
-          pointer-events: none;
-          display: none;
         }
 
         .sidebar-logo { padding: 20px 20px 14px; border-bottom: 1px solid rgba(255,255,255,0.07); }
@@ -672,7 +619,7 @@ function Chat({ username, onLogout }) {
         .dm-item:hover { background: rgba(255,255,255,0.07); }
         .dm-item.active { background: rgba(102,126,234,0.2); border: 1px solid rgba(102,126,234,0.25); }
 
-        .dm-avatar { width: 40px; height: 40px; border-radius: 50%; background: linear-gradient(135deg, #f093fb, #f5576c); display: flex; align-items: center; justify-content: center; font-size: 15px; font-weight: 700; color: white; flex-shrink: 0; overflow: hidden; }
+        .dm-avatar { width: 42px; height: 42px; border-radius: 50%; background: linear-gradient(135deg, #f093fb, #f5576c); display: flex; align-items: center; justify-content: center; font-size: 15px; font-weight: 700; color: white; flex-shrink: 0; overflow: hidden; }
 
         .dm-info { flex: 1; overflow: hidden; min-width: 0; }
         .dm-name-row { display: flex; align-items: center; justify-content: space-between; gap: 4px; }
@@ -681,7 +628,6 @@ function Chat({ username, onLogout }) {
         .dm-preview-row { display: flex; align-items: center; justify-content: space-between; margin-top: 2px; }
         .dm-preview { font-size: 11px; color: rgba(255,255,255,0.35); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; }
         .dm-lock-icon { font-size: 11px; color: rgba(255,215,0,0.5); flex-shrink: 0; margin-left: 4px; }
-        .dm-unread { background: #667eea; color: white; font-size: 10px; font-weight: 800; min-width: 16px; height: 16px; border-radius: 8px; display: flex; align-items: center; justify-content: center; padding: 0 4px; flex-shrink: 0; }
 
         .online-dot { width: 7px; height: 7px; background: #2ecc71; border-radius: 50%; box-shadow: 0 0 6px #2ecc71; animation: pulse 2s ease-in-out infinite; }
 
@@ -704,31 +650,53 @@ function Chat({ username, onLogout }) {
         .ripple-btn::after { content: ''; position: absolute; width: 10px; height: 10px; background: rgba(255,255,255,0.3); border-radius: 50%; top: 50%; left: 50%; transform: translate(-50%,-50%) scale(0); opacity: 1; }
         .ripple-btn:active::after { animation: ripple 0.4s ease-out; }
 
-        /* ===== MOBILE HAMBURGER (morphs into an X) — hidden on desktop ===== */
-        .mobile-menu-btn {
+        /* ===== MOBILE BACK BUTTON — hidden on desktop ===== */
+        .mobile-back-btn {
           display: none;
           background: rgba(255,255,255,0.08);
           border: 1px solid rgba(255,255,255,0.12);
+          color: white;
           width: 32px; height: 32px; border-radius: 9px;
           align-items: center; justify-content: center;
-          cursor: pointer; flex-shrink: 0;
+          font-size: 17px; cursor: pointer; flex-shrink: 0;
         }
-        .mobile-menu-bars { position: relative; width: 15px; height: 11px; display: block; }
-        .mobile-menu-bars span {
-          position: absolute; left: 0; width: 100%; height: 2px;
-          background: white; border-radius: 2px;
-          transition: transform 0.3s ease, opacity 0.15s ease, top 0.3s ease;
-        }
-        .mobile-menu-bars span:nth-child(1) { top: 0; }
-        .mobile-menu-bars span:nth-child(2) { top: 4.5px; }
-        .mobile-menu-bars span:nth-child(3) { top: 9px; }
-        .mobile-menu-btn.open .mobile-menu-bars span:nth-child(1) { top: 4.5px; transform: rotate(45deg); }
-        .mobile-menu-btn.open .mobile-menu-bars span:nth-child(2) { opacity: 0; }
-        .mobile-menu-btn.open .mobile-menu-bars span:nth-child(3) { top: 4.5px; transform: rotate(-45deg); }
+        .mobile-back-btn:hover { background: rgba(255,255,255,0.15); }
 
-        /* ===== MOBILE OVERLAY + EDGE SWIPE STRIP — hidden on desktop ===== */
-        .mobile-overlay { display: none; }
-        .mobile-edge-grab { display: none; }
+        /* ===== WELCOME / GREETING SCREEN (desktop right panel) ===== */
+        .welcome-screen {
+          flex: 1;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          gap: 18px;
+          text-align: center;
+          padding: 40px;
+          background: rgba(0,0,0,0.1);
+        }
+        .welcome-icon-circle {
+          width: 130px; height: 130px;
+          border-radius: 50%;
+          background: rgba(102,126,234,0.1);
+          border: 2px solid rgba(102,126,234,0.22);
+          display: flex; align-items: center; justify-content: center;
+          font-size: 60px;
+          animation: float 4s ease-in-out infinite;
+          filter: drop-shadow(0 0 30px rgba(102,126,234,0.3));
+        }
+        .welcome-title {
+          font-size: 26px; font-weight: 800;
+          background: linear-gradient(135deg, #667eea, #f093fb);
+          -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+          letter-spacing: 1px;
+        }
+        .welcome-sub { font-size: 14px; color: rgba(255,255,255,0.4); max-width: 360px; line-height: 1.7; }
+        .welcome-note {
+          font-size: 12px; color: rgba(255,255,255,0.32);
+          display: flex; align-items: center; gap: 6px; margin-top: 6px;
+          padding: 9px 18px; background: rgba(255,255,255,0.04);
+          border-radius: 20px; border: 1px solid rgba(255,255,255,0.07);
+        }
 
         .chat-main { flex: 1; display: flex; flex-direction: column; overflow: hidden; position: relative; }
 
@@ -936,88 +904,68 @@ function Chat({ username, onLogout }) {
         .lock-btn-cancel { background: rgba(255,255,255,0.07); color: rgba(255,255,255,0.55); border: 1px solid rgba(255,255,255,0.11) !important; }
 
         @media (max-width: 768px) {
-          .chat-layout { flex-direction: column; }
+          .chat-layout { flex-direction: row; }
 
           .sidebar {
-            position: fixed;
-            top: 0;
-            left: 0;
-            height: 100%;
-            width: 82vw !important;
-            max-width: 300px;
-            min-width: 0 !important;
+            width: 100% !important;
+            min-width: 100% !important;
+            max-width: 100% !important;
+            height: 100vh;
             opacity: 1 !important;
-            border-right: 1px solid rgba(255,255,255,0.08);
-            border-bottom: none;
+            border-right: none;
             flex-direction: column !important;
             padding: 0 !important;
             overflow-y: auto !important;
-            max-height: none;
-            z-index: 60;
-            transform: translateX(-100%);
-            transition: transform 0.35s cubic-bezier(0.16,1,0.3,1), box-shadow 0.35s ease;
-            background: rgba(10,8,25,0.98);
-            backdrop-filter: blur(12px);
+            display: ${activeRoom ? 'none' : 'flex'} !important;
           }
-          .sidebar.open {
-            transform: translateX(0);
-            box-shadow: 12px 0 50px rgba(102,126,234,0.25);
-          }
-          .sidebar-glow { display: block; }
 
-          .sidebar-logo { padding: 20px 20px 14px !important; }
+          .chat-main {
+            width: 100%;
+            height: 100vh;
+            display: ${activeRoom ? 'flex' : 'none'} !important;
+          }
+
+          .sidebar-logo { padding: 18px 18px 14px !important; }
           .logo-emoji { font-size: 21px !important; }
           .logo-name { font-size: 16px !important; }
-          .sidebar-section-title { padding: 14px 20px 6px !important; }
-          .channel-item { margin: 2px 10px !important; padding: 10px 12px !important; }
-          .dm-item { margin: 2px 10px !important; padding: 10px 12px !important; }
-          .dm-avatar { width: 38px !important; height: 38px !important; font-size: 14px !important; }
+          .sidebar-section-title { padding: 14px 18px 6px !important; }
+          .channel-item { margin: 2px 10px !important; padding: 11px 12px !important; }
+          .dm-item { margin: 2px 10px !important; padding: 11px 12px !important; }
+          .dm-avatar { width: 44px !important; height: 44px !important; font-size: 16px !important; }
 
           .sidebar-spacer { display: block !important; }
           .sidebar-user { padding: 12px 16px !important; }
-          .user-avatar { width: 32px !important; height: 32px !important; font-size: 13px !important; }
+          .user-avatar { width: 34px !important; height: 34px !important; font-size: 14px !important; }
           .user-name { font-size: 13px !important; }
           .user-status { display: block !important; }
-          .icon-btn { width: 29px !important; height: 29px !important; font-size: 13px !important; }
+          .icon-btn { width: 30px !important; height: 30px !important; font-size: 14px !important; }
 
-          .mobile-menu-btn { display: flex !important; }
-          .mobile-overlay {
-            display: block;
-            position: fixed; inset: 0;
-            background: rgba(0,0,0,0.55);
-            backdrop-filter: blur(3px);
-            z-index: 55;
-            animation: fadeIn 0.25s ease;
-          }
-          .mobile-edge-grab {
-            display: block;
-            position: fixed; top: 0; left: 0;
-            height: 100%; width: 14px;
-            z-index: 50;
-          }
-
-          .chat-main { flex: 1; height: 100vh; }
-          .chat-header { padding: 10px 14px !important; gap: 8px !important; }
           .sidebar-toggle { display: none !important; }
-          .chat-header-avatar { width: 28px !important; height: 28px !important; font-size: 13px !important; border-radius: 7px !important; }
-          .chat-header-name { font-size: 13px !important; }
-          .chat-header-status { font-size: 9px !important; }
+          .mobile-back-btn { display: flex !important; }
+
+          .chat-header { padding: 12px 14px !important; gap: 10px !important; }
+          .chat-header-avatar { width: 30px !important; height: 30px !important; font-size: 14px !important; border-radius: 8px !important; }
+          .chat-header-name { font-size: 14px !important; }
+          .chat-header-status { font-size: 10px !important; }
           .msg-count { display: none !important; }
-          .header-btn { width: 27px !important; height: 27px !important; font-size: 12px !important; }
-          .messages-area { padding: 9px !important; gap: 7px !important; }
-          .msg-row { max-width: 84% !important; }
-          .msg-bubble { font-size: 12px !important; padding: 7px 11px !important; }
-          .msg-image { max-width: 185px !important; }
-          .msg-avatar { width: 24px !important; height: 24px !important; font-size: 9px !important; }
-          .input-area { padding: 7px 9px 9px !important; }
-          .input-row { padding: 3px 3px 3px 9px !important; gap: 5px !important; }
-          .emoji-btn { width: 27px !important; height: 27px !important; font-size: 14px !important; }
-          .img-upload-btn { width: 27px !important; height: 27px !important; font-size: 14px !important; }
-          .send-btn { width: 32px !important; height: 32px !important; font-size: 14px !important; border-radius: 9px !important; }
-          .emoji-picker-popup { width: calc(100vw - 18px) !important; left: 9px !important; bottom: 60px !important; }
-          .connection-banner { font-size: 10px !important; padding: 6px 10px !important; }
-          .lock-modal { width: 88vw !important; padding: 18px !important; }
-          .profile-modal { width: 92vw !important; padding: 16px !important; }
+          .header-btn { width: 28px !important; height: 28px !important; font-size: 13px !important; }
+
+          .messages-area { padding: 10px !important; gap: 8px !important; }
+          .msg-row { max-width: 85% !important; }
+          .msg-bubble { font-size: 13px !important; padding: 8px 12px !important; }
+          .msg-image { max-width: 200px !important; }
+          .msg-avatar { width: 26px !important; height: 26px !important; font-size: 10px !important; }
+
+          .input-area { padding: 8px 10px 10px !important; }
+          .input-row { padding: 3px 3px 3px 10px !important; gap: 6px !important; }
+          .emoji-btn { width: 28px !important; height: 28px !important; font-size: 15px !important; }
+          .img-upload-btn { width: 28px !important; height: 28px !important; font-size: 15px !important; }
+          .send-btn { width: 34px !important; height: 34px !important; font-size: 15px !important; }
+
+          .emoji-picker-popup { width: calc(100vw - 20px) !important; left: 10px !important; bottom: 65px !important; }
+          .connection-banner { font-size: 11px !important; padding: 7px 10px !important; }
+          .lock-modal { width: 90vw !important; padding: 20px !important; }
+          .profile-modal { width: 95vw !important; padding: 16px !important; }
         }
       `}</style>
 
@@ -1052,7 +1000,7 @@ function Chat({ username, onLogout }) {
               value={lockVerifyPassword} onChange={(e) => setLockVerifyPassword(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && verifyLock()} />
             <button className="lock-btn lock-btn-primary" onClick={verifyLock}>🔓 Unlock</button>
-            <button className="lock-btn lock-btn-cancel" onClick={() => { setShowLockModal(false); setActiveDMUser(null); setActiveRoom('general'); }}>Cancel</button>
+            <button className="lock-btn lock-btn-cancel" onClick={() => { setShowLockModal(false); setActiveDMUser(null); setActiveRoom(null); }}>Cancel</button>
           </div>
         </div>
       )}
@@ -1129,25 +1077,7 @@ function Chat({ username, onLogout }) {
       )}
 
       <div className="chat-layout">
-        {sidebarOpen && <div className="mobile-overlay" onClick={() => setSidebarOpen(false)}></div>}
-
-        {!sidebarOpen && (
-          <div
-            className="mobile-edge-grab"
-            onTouchStart={handleTouchStart}
-            onTouchMove={handleTouchMove}
-            onTouchEnd={handleTouchEnd}
-          />
-        )}
-
-        <div
-          className={`sidebar ${sidebarOpen ? 'open' : ''}`}
-          ref={sidebarRef}
-          onTouchStart={handleTouchStart}
-          onTouchMove={handleTouchMove}
-          onTouchEnd={handleTouchEnd}
-        >
-          <div className="sidebar-glow"></div>
+        <div className="sidebar">
           <div className="sidebar-logo">
             <div className="logo-row">
               <span className="logo-emoji">💬</span>
@@ -1157,13 +1087,13 @@ function Chat({ username, onLogout }) {
 
           <div className="sidebar-section-title">Channels</div>
           <div className={`channel-item ${activeRoom === 'general' ? 'active' : ''}`}
-            onClick={() => { setActiveRoom('general'); setActiveDMUser(null); if (window.matchMedia('(max-width: 768px)').matches) setSidebarOpen(false); }}>
+            onClick={() => { setActiveRoom('general'); setActiveDMUser(null); setUnreadCount(0); }}>
             <span className="channel-icon">🌐</span>
             <div className="channel-info">
               <div className="channel-name"># general</div>
               <div className="channel-sub">Everyone is here</div>
             </div>
-            {unreadCount > 0 && !isTabFocused
+            {unreadCount > 0 && (activeRoom !== 'general' || !isTabFocused)
               ? <div className="channel-badge">{unreadCount}</div>
               : <div className="online-dot"></div>}
           </div>
@@ -1196,18 +1126,18 @@ function Chat({ username, onLogout }) {
                     {lastTs > 0 && <div className="dm-time">{formatLastMsgTime(lastTs)}</div>}
                   </div>
                   <div className="dm-preview-row">
-                  <div className="dm-preview" style={{ color: unread > 0 ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.35)', fontWeight: unread > 0 ? '600' : '400' }}>
-                    {lastPreview || 'Click to chat'}
+                    <div className="dm-preview" style={{ color: unread > 0 ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.35)', fontWeight: unread > 0 ? '600' : '400' }}>
+                      {lastPreview || 'Click to chat'}
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
+                      {isLocked && <span className="dm-lock-icon">🔒</span>}
+                      {unread > 0 && (
+                        <div style={{ background: '#2ecc71', color: 'white', fontSize: '10px', fontWeight: '800', minWidth: '18px', height: '18px', borderRadius: '9px', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 4px', boxShadow: '0 0 6px rgba(46,204,113,0.6)' }}>
+                          {unread}
+                        </div>
+                      )}
+                    </div>
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
-                    {isLocked && <span className="dm-lock-icon">🔒</span>}
-                    {unread > 0 && (
-                      <div style={{ background: '#2ecc71', color: 'white', fontSize: '10px', fontWeight: '800', minWidth: '18px', height: '18px', borderRadius: '9px', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 4px', boxShadow: '0 0 6px rgba(46,204,113,0.6)' }}>
-                        {unread}
-                      </div>
-                    )}
-                  </div>
-                </div>
                 </div>
               </div>
             );
@@ -1230,314 +1160,321 @@ function Chat({ username, onLogout }) {
         </div>
 
         <div className="chat-main" onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop} onPaste={handlePaste}>
-          <div className="chat-header">
-            <button className="sidebar-toggle ripple-btn" onClick={() => setSidebarOpen(!sidebarOpen)}>
-              {sidebarOpen ? '◀' : '▶'}
-            </button>
-            <button
-              className={`mobile-menu-btn ripple-btn ${sidebarOpen ? 'open' : ''}`}
-              onClick={() => setSidebarOpen(!sidebarOpen)}
-              aria-label={sidebarOpen ? 'Close menu' : 'Open menu'}
-            >
-              <span className="mobile-menu-bars"><span></span><span></span><span></span></span>
-            </button>
-            <div className="chat-header-avatar">
-              {activeRoom === 'general' ? '🌐' : (() => {
-                const dmUser = allUsers.find(u => u.username === activeDMUser);
-                return dmUser?.avatar_url
-                  ? <img src={dmUser.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '9px' }} />
-                  : getInitial(activeDMUser || '');
-              })()}
+          {activeRoom === null ? (
+            <div className="welcome-screen">
+              <div className="welcome-icon-circle">💬</div>
+              <div className="welcome-title">Nalantamil Web</div>
+              <div className="welcome-sub">Select a channel or a person from the list to start chatting. Your messages sync in real time.</div>
+              <div className="welcome-note">🔒 Private chats can be locked with a password.</div>
             </div>
-            <div className="chat-header-info">
-              <div className="chat-header-name">
-                {activeRoom === 'general' ? '# general' : `💬 ${activeDMUser}`}
-              </div>
-              <div className="chat-header-status">
-                <span className="status-dot" style={{ background: isConnected ? '#2ecc71' : '#e74c3c', boxShadow: isConnected ? '0 0 5px #2ecc71' : '0 0 5px #e74c3c' }}></span>
-                {isConnected ? (activeRoom === 'general' ? 'Group Chat — Everyone online' : `Private chat`) : 'Connecting...'}
-              </div>
-            </div>
-            <div className="msg-count">{currentMessages.filter(m => m.type !== 'system').length} msgs</div>
-
-            {activeRoom === 'dm' && (
-              <button className="header-btn ripple-btn"
-                onClick={() => {
-                  const lock = chatLocks[currentRoomId];
-                  if (lock?.locked && lock.set_by === username) {
-                    if (window.confirm('Remove lock from this chat?')) removeLock();
-                  } else if (!lock?.locked) {
-                    setShowLockModal('set');
-                  }
-                }}
-                title={chatLocks[currentRoomId]?.locked ? 'Locked' : 'Lock Chat'}>
-                {chatLocks[currentRoomId]?.locked ? '🔒' : '🔓'}
-              </button>
-            )}
-
-            <button className={`header-btn ripple-btn ${showSearch ? 'active' : ''}`}
-              onClick={() => { setShowSearch(!showSearch); setSearchQuery(''); }}>🔍</button>
-            {activeRoom === 'general' && (
-              <button className={`header-btn ripple-btn ${showPinned ? 'active' : ''}`}
-                onClick={() => setShowPinned(!showPinned)}>📌</button>
-            )}
-            <button className="header-btn ripple-btn" onClick={() => setShowBgPicker(!showBgPicker)}>🎨</button>
-
-            {showBgPicker && (
-              <div className="bg-picker-dropdown">
-                <div className="bg-picker-title">Background</div>
-                <div className="bg-options">
-                  {BACKGROUNDS.map(bg => (
-                    <div key={bg.id} className={`bg-option ${selectedBg.id === bg.id ? 'active' : ''}`}
-                      style={{ background: bg.value }}
-                      onClick={() => { setSelectedBg(bg); setShowBgPicker(false); }}>
-                      {bg.label}
-                    </div>
-                  ))}
+          ) : (
+            <>
+              <div className="chat-header">
+                <button className="sidebar-toggle ripple-btn" onClick={() => setSidebarOpen(!sidebarOpen)} title="Collapse list">
+                  {sidebarOpen ? '◀' : '▶'}
+                </button>
+                <button className="mobile-back-btn ripple-btn" onClick={backToList} aria-label="Back to chat list">
+                  ←
+                </button>
+                <div className="chat-header-avatar">
+                  {activeRoom === 'general' ? '🌐' : (() => {
+                    const dmUser = allUsers.find(u => u.username === activeDMUser);
+                    return dmUser?.avatar_url
+                      ? <img src={dmUser.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '9px' }} />
+                      : getInitial(activeDMUser || '');
+                  })()}
                 </div>
-              </div>
-            )}
-          </div>
-
-          {showSearch && (
-            <div className="search-bar">
-              <input ref={searchInputRef} className="search-input" placeholder="Search messages..."
-                value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
-              {searchQuery && <span className="search-results-count">{filteredMessages.filter(m => m.type !== 'system').length} results</span>}
-              <button className="search-close" onClick={() => { setShowSearch(false); setSearchQuery(''); }}>✕</button>
-            </div>
-          )}
-
-          {showPinned && activeRoom === 'general' && (
-            <div className="pinned-panel">
-              <div className="pinned-panel-title">📌 Pinned {pinnedMessages.length > 0 && `(${pinnedMessages.length})`}</div>
-              {pinnedMessages.length === 0
-                ? <div style={{ color: 'rgba(255,255,255,0.28)', fontSize: '11px' }}>No pinned messages!</div>
-                : pinnedMessages.map((p, i) => (
-                  <div key={i} className="pinned-item">
-                    <span>📌</span>
-                    <div className="pinned-item-content">
-                      <div className="pinned-item-text">{p.text?.startsWith('__IMAGE__') ? '🖼️ Image' : p.text?.startsWith('__FILE__') ? '📎 File' : p.text}</div>
-                      <div className="pinned-item-meta">by {p.username} • pinned by {p.pinned_by}</div>
-                    </div>
-                    <button className="unpin-btn" onClick={() => unpinMessage(p.message_id)}>✕</button>
+                <div className="chat-header-info">
+                  <div className="chat-header-name">
+                    {activeRoom === 'general' ? '# general' : `💬 ${activeDMUser}`}
                   </div>
-                ))
-              }
-            </div>
-          )}
+                  <div className="chat-header-status">
+                    <span className="status-dot" style={{ background: isConnected ? '#2ecc71' : '#e74c3c', boxShadow: isConnected ? '0 0 5px #2ecc71' : '0 0 5px #e74c3c' }}></span>
+                    {isConnected ? (activeRoom === 'general' ? 'Group Chat — Everyone online' : `Private chat`) : 'Connecting...'}
+                  </div>
+                </div>
+                <div className="msg-count">{currentMessages.filter(m => m.type !== 'system').length} msgs</div>
 
-          <div className="messages-area">
-            {filteredMessages.length === 0 && searchQuery ? (
-              <div className="no-results">🔍 No messages found for "<strong>{searchQuery}</strong>"</div>
-            ) : filteredMessages.length === 0 ? (
-              <div className="empty-chat">
-                <span className="empty-icon">{activeRoom === 'general' ? '💬' : '🔐'}</span>
-                <div className="empty-title">{activeRoom === 'general' ? 'No messages yet' : `Chat with ${activeDMUser}`}</div>
-                <div className="empty-sub">{activeRoom === 'general' ? 'Be the first to say hello!' : 'Your messages are private'}</div>
-                <div className="empty-hint">{activeRoom === 'general' ? '✨ Send a message below' : '🔒 You can lock this chat for privacy'}</div>
+                {activeRoom === 'dm' && (
+                  <button className="header-btn ripple-btn"
+                    onClick={() => {
+                      const lock = chatLocks[currentRoomId];
+                      if (lock?.locked && lock.set_by === username) {
+                        if (window.confirm('Remove lock from this chat?')) removeLock();
+                      } else if (!lock?.locked) {
+                        setShowLockModal('set');
+                      }
+                    }}
+                    title={chatLocks[currentRoomId]?.locked ? 'Locked' : 'Lock Chat'}>
+                    {chatLocks[currentRoomId]?.locked ? '🔒' : '🔓'}
+                  </button>
+                )}
+
+                <button className={`header-btn ripple-btn ${showSearch ? 'active' : ''}`}
+                  onClick={() => { setShowSearch(!showSearch); setSearchQuery(''); }}>🔍</button>
+                {activeRoom === 'general' && (
+                  <button className={`header-btn ripple-btn ${showPinned ? 'active' : ''}`}
+                    onClick={() => setShowPinned(!showPinned)}>📌</button>
+                )}
+                <button className="header-btn ripple-btn" onClick={() => setShowBgPicker(!showBgPicker)}>🎨</button>
+
+                {showBgPicker && (
+                  <div className="bg-picker-dropdown">
+                    <div className="bg-picker-title">Background</div>
+                    <div className="bg-options">
+                      {BACKGROUNDS.map(bg => (
+                        <div key={bg.id} className={`bg-option ${selectedBg.id === bg.id ? 'active' : ''}`}
+                          style={{ background: bg.value }}
+                          onClick={() => { setSelectedBg(bg); setShowBgPicker(false); }}>
+                          {bg.label}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
-            ) : (
-              filteredMessages.map((msg, index) => {
-                if (msg.type === 'system') return <div key={index} className="system-msg">— {msg.text} —</div>;
-                const isMine = msg.username === username;
-                const isEditing = editingId === msg._id;
-                const reactions = msg.reactions || {};
-                const showDate = shouldShowDateSeparator(filteredMessages, index);
-                const userMsgs = currentMessages.filter(m => m.type !== 'system');
-                const msgIndexInAll = userMsgs.findIndex(m => m._id === msg._id);
-                const isLastMine = isMine && msgIndexInAll === userMsgs.length - 1;
 
-                return (
-                  <React.Fragment key={msg._id || index}>
-                    {showDate && msg.timestamp && (
-                      <div className="date-separator">
-                        <div className="date-separator-line"></div>
-                        <span className="date-separator-label">{getDateLabel(msg.timestamp)}</span>
-                        <div className="date-separator-line"></div>
+              {showSearch && (
+                <div className="search-bar">
+                  <input ref={searchInputRef} className="search-input" placeholder="Search messages..."
+                    value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
+                  {searchQuery && <span className="search-results-count">{filteredMessages.filter(m => m.type !== 'system').length} results</span>}
+                  <button className="search-close" onClick={() => { setShowSearch(false); setSearchQuery(''); }}>✕</button>
+                </div>
+              )}
+
+              {showPinned && activeRoom === 'general' && (
+                <div className="pinned-panel">
+                  <div className="pinned-panel-title">📌 Pinned {pinnedMessages.length > 0 && `(${pinnedMessages.length})`}</div>
+                  {pinnedMessages.length === 0
+                    ? <div style={{ color: 'rgba(255,255,255,0.28)', fontSize: '11px' }}>No pinned messages!</div>
+                    : pinnedMessages.map((p, i) => (
+                      <div key={i} className="pinned-item">
+                        <span>📌</span>
+                        <div className="pinned-item-content">
+                          <div className="pinned-item-text">{p.text?.startsWith('__IMAGE__') ? '🖼️ Image' : p.text?.startsWith('__FILE__') ? '📎 File' : p.text}</div>
+                          <div className="pinned-item-meta">by {p.username} • pinned by {p.pinned_by}</div>
+                        </div>
+                        <button className="unpin-btn" onClick={() => unpinMessage(p.message_id)}>✕</button>
                       </div>
-                    )}
-                    <div className={`msg-row ${isMine ? 'mine' : 'theirs'}`}>
-                      <div className="msg-avatar" style={{ padding: 0, overflow: 'hidden' }}>
-                        {isMine && profile.avatar_url
-                          ? <img src={profile.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
-                          : getInitial(msg.username)}
-                      </div>
-                      <div className="msg-content">
-                        {!isMine && <span className="msg-sender">{msg.username}</span>}
-                        {isEditing ? (
-                          <>
-                            <input className="edit-input" value={editText}
-                              onChange={(e) => setEditText(e.target.value)}
-                              onKeyDown={(e) => e.key === 'Enter' && saveEdit(msg._id)} autoFocus />
-                            <div className="edit-actions">
-                              <button className="save-btn" onClick={() => saveEdit(msg._id)}>Save</button>
-                              <button className="cancel-btn" onClick={() => setEditingId(null)}>Cancel</button>
-                            </div>
-                          </>
-                        ) : (
-                          <>
-                            <div className="msg-bubble">
-                              {msg.reply_to && (
-                                <div className="msg-reply-preview">
-                                  <div className="msg-reply-name">↩️ {msg.reply_to.username}</div>
-                                  <div className="msg-reply-text">
-                                    {msg.reply_to.text?.startsWith('__IMAGE__') ? '🖼️ Image' : msg.reply_to.text?.startsWith('__FILE__') ? '📎 File' : msg.reply_to.text}
-                                  </div>
+                    ))
+                  }
+                </div>
+              )}
+
+              <div className="messages-area">
+                {filteredMessages.length === 0 && searchQuery ? (
+                  <div className="no-results">🔍 No messages found for "<strong>{searchQuery}</strong>"</div>
+                ) : filteredMessages.length === 0 ? (
+                  <div className="empty-chat">
+                    <span className="empty-icon">{activeRoom === 'general' ? '💬' : '🔐'}</span>
+                    <div className="empty-title">{activeRoom === 'general' ? 'No messages yet' : `Chat with ${activeDMUser}`}</div>
+                    <div className="empty-sub">{activeRoom === 'general' ? 'Be the first to say hello!' : 'Your messages are private'}</div>
+                    <div className="empty-hint">{activeRoom === 'general' ? '✨ Send a message below' : '🔒 You can lock this chat for privacy'}</div>
+                  </div>
+                ) : (
+                  filteredMessages.map((msg, index) => {
+                    if (msg.type === 'system') return <div key={index} className="system-msg">— {msg.text} —</div>;
+                    const isMine = msg.username === username;
+                    const isEditing = editingId === msg._id;
+                    const reactions = msg.reactions || {};
+                    const showDate = shouldShowDateSeparator(filteredMessages, index);
+                    const userMsgs = currentMessages.filter(m => m.type !== 'system');
+                    const msgIndexInAll = userMsgs.findIndex(m => m._id === msg._id);
+                    const isLastMine = isMine && msgIndexInAll === userMsgs.length - 1;
+
+                    return (
+                      <React.Fragment key={msg._id || index}>
+                        {showDate && msg.timestamp && (
+                          <div className="date-separator">
+                            <div className="date-separator-line"></div>
+                            <span className="date-separator-label">{getDateLabel(msg.timestamp)}</span>
+                            <div className="date-separator-line"></div>
+                          </div>
+                        )}
+                        <div className={`msg-row ${isMine ? 'mine' : 'theirs'}`}>
+                          <div className="msg-avatar" style={{ padding: 0, overflow: 'hidden' }}>
+                            {isMine && profile.avatar_url
+                              ? <img src={profile.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
+                              : getInitial(msg.username)}
+                          </div>
+                          <div className="msg-content">
+                            {!isMine && <span className="msg-sender">{msg.username}</span>}
+                            {isEditing ? (
+                              <>
+                                <input className="edit-input" value={editText}
+                                  onChange={(e) => setEditText(e.target.value)}
+                                  onKeyDown={(e) => e.key === 'Enter' && saveEdit(msg._id)} autoFocus />
+                                <div className="edit-actions">
+                                  <button className="save-btn" onClick={() => saveEdit(msg._id)}>Save</button>
+                                  <button className="cancel-btn" onClick={() => setEditingId(null)}>Cancel</button>
                                 </div>
-                              )}
-                              {msg.text?.startsWith('__IMAGE__') ? (() => {
-                                const parts = msg.text.replace('__IMAGE__', '').split('__CAPTION__');
-                                return (
-                                  <div>
-                                    <img src={parts[0]} alt="" className="msg-image" onClick={() => window.open(parts[0], '_blank')} />
-                                    {parts[1] && <p style={{ marginTop: '6px', fontSize: '12px', color: 'inherit' }}>{parts[1]}</p>}
-                                  </div>
-                                );
-                              })() : msg.text?.startsWith('__FILE__') ? (() => {
-                                const withoutPrefix = msg.text.replace('__FILE__', '');
-                                const urlPart = withoutPrefix.split('__FILENAME__')[0];
-                                const rest = withoutPrefix.split('__FILENAME__')[1] || '';
-                                const filenamePart = rest.split('__FILEICON__')[0];
-                                const iconAndCaption = rest.split('__FILEICON__')[1] || '';
-                                const icon = iconAndCaption.split('__CAPTION__')[0];
-                                const caption = iconAndCaption.split('__CAPTION__')[1];
-                                return (
-                                  <div>
-                                    <div className="file-msg" onClick={() => window.open(urlPart, '_blank')}>
-                                      <span className="file-msg-icon">{icon || '📎'}</span>
-                                      <div className="file-msg-info">
-                                        <div className="file-msg-name">{filenamePart}</div>
-                                        <div className="file-msg-action">Tap to open ↗️</div>
+                              </>
+                            ) : (
+                              <>
+                                <div className="msg-bubble">
+                                  {msg.reply_to && (
+                                    <div className="msg-reply-preview">
+                                      <div className="msg-reply-name">↩️ {msg.reply_to.username}</div>
+                                      <div className="msg-reply-text">
+                                        {msg.reply_to.text?.startsWith('__IMAGE__') ? '🖼️ Image' : msg.reply_to.text?.startsWith('__FILE__') ? '📎 File' : msg.reply_to.text}
                                       </div>
                                     </div>
-                                    {caption && <p style={{ marginTop: '6px', fontSize: '12px', color: 'inherit' }}>{caption}</p>}
+                                  )}
+                                  {msg.text?.startsWith('__IMAGE__') ? (() => {
+                                    const parts = msg.text.replace('__IMAGE__', '').split('__CAPTION__');
+                                    return (
+                                      <div>
+                                        <img src={parts[0]} alt="" className="msg-image" onClick={() => window.open(parts[0], '_blank')} />
+                                        {parts[1] && <p style={{ marginTop: '6px', fontSize: '12px', color: 'inherit' }}>{parts[1]}</p>}
+                                      </div>
+                                    );
+                                  })() : msg.text?.startsWith('__FILE__') ? (() => {
+                                    const withoutPrefix = msg.text.replace('__FILE__', '');
+                                    const urlPart = withoutPrefix.split('__FILENAME__')[0];
+                                    const rest = withoutPrefix.split('__FILENAME__')[1] || '';
+                                    const filenamePart = rest.split('__FILEICON__')[0];
+                                    const iconAndCaption = rest.split('__FILEICON__')[1] || '';
+                                    const icon = iconAndCaption.split('__CAPTION__')[0];
+                                    const caption = iconAndCaption.split('__CAPTION__')[1];
+                                    return (
+                                      <div>
+                                        <div className="file-msg" onClick={() => window.open(urlPart, '_blank')}>
+                                          <span className="file-msg-icon">{icon || '📎'}</span>
+                                          <div className="file-msg-info">
+                                            <div className="file-msg-name">{filenamePart}</div>
+                                            <div className="file-msg-action">Tap to open ↗️</div>
+                                          </div>
+                                        </div>
+                                        {caption && <p style={{ marginTop: '6px', fontSize: '12px', color: 'inherit' }}>{caption}</p>}
+                                      </div>
+                                    );
+                                  })() : searchQuery ? (
+                                    msg.text?.split(new RegExp(`(${searchQuery})`, 'gi')).map((part, i) =>
+                                      part.toLowerCase() === searchQuery.toLowerCase()
+                                        ? <span key={i} className="search-highlight">{part}</span>
+                                        : part
+                                    )
+                                  ) : msg.text}
+                                </div>
+                                <div className="msg-footer">
+                                  <span className="msg-time">{formatTime(msg.timestamp)}</span>
+                                  {msg.edited && <span className="edited-tag">(edited)</span>}
+                                  {isMine && <span className={`seen-status ${isLastMine ? '' : 'delivered'}`}>{isLastMine ? '✓✓' : '✓'}</span>}
+                                  {isPinned(msg._id) && <span className="msg-pin-indicator">📌</span>}
+                                </div>
+                                {Object.keys(reactions).length > 0 && (
+                                  <div className="reactions-bar">
+                                    {Object.entries(reactions).map(([emoji, users]) =>
+                                      users.length > 0 ? (
+                                        <button key={emoji} className={`reaction-btn ${users.includes(username) ? 'reacted' : ''}`}
+                                          onClick={() => addReaction(msg._id, emoji)}>
+                                          {emoji} <span className="reaction-count">{users.length}</span>
+                                        </button>
+                                      ) : null
+                                    )}
                                   </div>
-                                );
-                              })() : searchQuery ? (
-                                msg.text?.split(new RegExp(`(${searchQuery})`, 'gi')).map((part, i) =>
-                                  part.toLowerCase() === searchQuery.toLowerCase()
-                                    ? <span key={i} className="search-highlight">{part}</span>
-                                    : part
-                                )
-                              ) : msg.text}
-                            </div>
-                            <div className="msg-footer">
-                              <span className="msg-time">{formatTime(msg.timestamp)}</span>
-                              {msg.edited && <span className="edited-tag">(edited)</span>}
-                              {isMine && <span className={`seen-status ${isLastMine ? '' : 'delivered'}`}>{isLastMine ? '✓✓' : '✓'}</span>}
-                              {isPinned(msg._id) && <span className="msg-pin-indicator">📌</span>}
-                            </div>
-                            {Object.keys(reactions).length > 0 && (
-                              <div className="reactions-bar">
-                                {Object.entries(reactions).map(([emoji, users]) =>
-                                  users.length > 0 ? (
-                                    <button key={emoji} className={`reaction-btn ${users.includes(username) ? 'reacted' : ''}`}
-                                      onClick={() => addReaction(msg._id, emoji)}>
-                                      {emoji} <span className="reaction-count">{users.length}</span>
-                                    </button>
-                                  ) : null
                                 )}
-                              </div>
+                                <div className="msg-actions">
+                                  <div className="reaction-picker">
+                                    {REACTIONS.map(emoji => (
+                                      <button key={emoji} className="reaction-pick-btn"
+                                        onClick={() => addReaction(msg._id, emoji)}>{emoji}</button>
+                                    ))}
+                                  </div>
+                                  <button className="action-btn"
+                                    onClick={() => { setReplyingTo(msg); document.querySelector('.msg-input')?.focus(); }}>↩️</button>
+                                  {isMine && (
+                                    <>
+                                      <button className="action-btn" onClick={() => startEdit(msg)}>✏️</button>
+                                      <button className="action-btn delete" onClick={() => deleteMessage(msg._id)}>🗑️</button>
+                                    </>
+                                  )}
+                                  {activeRoom === 'general' && (
+                                    <button className={`action-btn ${isPinned(msg._id) ? 'pinned' : ''}`}
+                                      onClick={() => isPinned(msg._id) ? unpinMessage(msg._id) : pinMessage(msg)}>
+                                      {isPinned(msg._id) ? '📌' : '📍'}
+                                    </button>
+                                  )}
+                                </div>
+                              </>
                             )}
-                            <div className="msg-actions">
-                              <div className="reaction-picker">
-                                {REACTIONS.map(emoji => (
-                                  <button key={emoji} className="reaction-pick-btn"
-                                    onClick={() => addReaction(msg._id, emoji)}>{emoji}</button>
-                                ))}
-                              </div>
-                              <button className="action-btn"
-                                onClick={() => { setReplyingTo(msg); document.querySelector('.msg-input')?.focus(); }}>↩️</button>
-                              {isMine && (
-                                <>
-                                  <button className="action-btn" onClick={() => startEdit(msg)}>✏️</button>
-                                  <button className="action-btn delete" onClick={() => deleteMessage(msg._id)}>🗑️</button>
-                                </>
-                              )}
-                              {activeRoom === 'general' && (
-                                <button className={`action-btn ${isPinned(msg._id) ? 'pinned' : ''}`}
-                                  onClick={() => isPinned(msg._id) ? unpinMessage(msg._id) : pinMessage(msg)}>
-                                  {isPinned(msg._id) ? '📌' : '📍'}
-                                </button>
-                              )}
-                            </div>
-                          </>
-                        )}
+                          </div>
+                        </div>
+                      </React.Fragment>
+                    );
+                  })
+                )}
+                {typingUsers.filter(u => u !== username).length > 0 && (
+                  <div className="typing-indicator">
+                    <div className="typing-dots">
+                      <div className="typing-dot"></div>
+                      <div className="typing-dot"></div>
+                      <div className="typing-dot"></div>
+                    </div>
+                    <span className="typing-text">
+                      {typingUsers.filter(u => u !== username).join(', ')} {typingUsers.filter(u => u !== username).length === 1 ? 'is' : 'are'} typing...
+                    </span>
+                  </div>
+                )}
+                <div ref={messagesEndRef} />
+              </div>
+
+              <div className="input-area">
+                {replyingTo && (
+                  <div className="reply-bar">
+                    <div className="reply-bar-content">
+                      <div className="reply-bar-name">↩️ Replying to {replyingTo.username}</div>
+                      <div className="reply-bar-text">
+                        {replyingTo.text?.startsWith('__IMAGE__') ? '🖼️ Image' : replyingTo.text?.startsWith('__FILE__') ? '📎 File' : replyingTo.text}
                       </div>
                     </div>
-                  </React.Fragment>
-                );
-              })
-            )}
-            {typingUsers.filter(u => u !== username).length > 0 && (
-              <div className="typing-indicator">
-                <div className="typing-dots">
-                  <div className="typing-dot"></div>
-                  <div className="typing-dot"></div>
-                  <div className="typing-dot"></div>
-                </div>
-                <span className="typing-text">
-                  {typingUsers.filter(u => u !== username).join(', ')} {typingUsers.filter(u => u !== username).length === 1 ? 'is' : 'are'} typing...
-                </span>
-              </div>
-            )}
-            <div ref={messagesEndRef} />
-          </div>
-
-          <div className="input-area">
-            {replyingTo && (
-              <div className="reply-bar">
-                <div className="reply-bar-content">
-                  <div className="reply-bar-name">↩️ Replying to {replyingTo.username}</div>
-                  <div className="reply-bar-text">
-                    {replyingTo.text?.startsWith('__IMAGE__') ? '🖼️ Image' : replyingTo.text?.startsWith('__FILE__') ? '📎 File' : replyingTo.text}
+                    <button className="reply-bar-cancel" onClick={() => setReplyingTo(null)}>✕</button>
                   </div>
-                </div>
-                <button className="reply-bar-cancel" onClick={() => setReplyingTo(null)}>✕</button>
+                )}
+                {imageFile && (
+                  <div className="image-preview-bar">
+                    {imagePreview
+                      ? <img src={imagePreview} alt="" className="preview-img" />
+                      : <div style={{ width: '48px', height: '48px', background: 'rgba(102,126,234,0.18)', borderRadius: '7px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '24px', flexShrink: 0 }}>{getFileIcon(imageFile)}</div>
+                    }
+                    <div className="preview-info">
+                      <div className="preview-name">{imageFile?.name}</div>
+                      <div className="preview-size">{(imageFile?.size / 1024).toFixed(1)} KB</div>
+                      {uploading && <div className="upload-progress">⏳ Uploading...</div>}
+                    </div>
+                    <button className="preview-cancel" onClick={cancelImage}>✕</button>
+                  </div>
+                )}
+                {showEmojiPicker && (
+                  <div className="emoji-picker-popup">
+                    <div className="emoji-picker-title">Pick an Emoji</div>
+                    <div className="emoji-grid">
+                      {EMOJI_LIST.map((emoji, i) => (
+                        <button key={i} className="emoji-item"
+                          onClick={() => { setInput(prev => prev + emoji); setShowEmojiPicker(false); }}>{emoji}</button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                <form className="input-row" onSubmit={sendMessage}>
+                  <button type="button" className={`emoji-btn ${showEmojiPicker ? 'active' : ''}`}
+                    onClick={() => setShowEmojiPicker(!showEmojiPicker)}>😊</button>
+                  <button type="button" className="img-upload-btn" onClick={() => fileInputRef.current?.click()}>📷</button>
+                  <input ref={fileInputRef} type="file"
+                    accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip,.rar,.txt"
+                    style={{ display: 'none' }} onChange={handleFileInput} />
+                  <input
+                    className="msg-input" type="text"
+                    placeholder={!isConnected ? '⚠️ Reconnecting...' : imageFile ? 'Add a caption...' : activeRoom === 'general' ? 'Message #general...' : `Message ${activeDMUser}...`}
+                    value={input} onChange={handleInputChange} disabled={!isConnected} />
+                  <button type="submit" className="send-btn ripple-btn" disabled={uploading || !isConnected}>
+                    {uploading ? '⏳' : !isConnected ? '⚡' : '➤'}
+                  </button>
+                </form>
               </div>
-            )}
-            {imageFile && (
-              <div className="image-preview-bar">
-                {imagePreview
-                  ? <img src={imagePreview} alt="" className="preview-img" />
-                  : <div style={{ width: '48px', height: '48px', background: 'rgba(102,126,234,0.18)', borderRadius: '7px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '24px', flexShrink: 0 }}>{getFileIcon(imageFile)}</div>
-                }
-                <div className="preview-info">
-                  <div className="preview-name">{imageFile?.name}</div>
-                  <div className="preview-size">{(imageFile?.size / 1024).toFixed(1)} KB</div>
-                  {uploading && <div className="upload-progress">⏳ Uploading...</div>}
-                </div>
-                <button className="preview-cancel" onClick={cancelImage}>✕</button>
-              </div>
-            )}
-            {showEmojiPicker && (
-              <div className="emoji-picker-popup">
-                <div className="emoji-picker-title">Pick an Emoji</div>
-                <div className="emoji-grid">
-                  {EMOJI_LIST.map((emoji, i) => (
-                    <button key={i} className="emoji-item"
-                      onClick={() => { setInput(prev => prev + emoji); setShowEmojiPicker(false); }}>{emoji}</button>
-                  ))}
-                </div>
-              </div>
-            )}
-            <form className="input-row" onSubmit={sendMessage}>
-              <button type="button" className={`emoji-btn ${showEmojiPicker ? 'active' : ''}`}
-                onClick={() => setShowEmojiPicker(!showEmojiPicker)}>😊</button>
-              <button type="button" className="img-upload-btn" onClick={() => fileInputRef.current?.click()}>📷</button>
-              <input ref={fileInputRef} type="file"
-                accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip,.rar,.txt"
-                style={{ display: 'none' }} onChange={handleFileInput} />
-              <input
-                className="msg-input" type="text"
-                placeholder={!isConnected ? '⚠️ Reconnecting...' : imageFile ? 'Add a caption...' : activeRoom === 'general' ? 'Message #general...' : `Message ${activeDMUser}...`}
-                value={input} onChange={handleInputChange} disabled={!isConnected} />
-              <button type="submit" className="send-btn ripple-btn" disabled={uploading || !isConnected}>
-                {uploading ? '⏳' : !isConnected ? '⚡' : '➤'}
-              </button>
-            </form>
-          </div>
+            </>
+          )}
         </div>
       </div>
     </>
