@@ -292,7 +292,7 @@ function Chat({ username, onLogout }) {
       socket.off('user_typing'); socket.off('user_stop_typing');
       socket.off('message_pinned'); socket.off('message_unpinned');
     };
-  }, [username, isTabFocused, activeDMUser]);
+  }, [username, isTabFocused, activeDMUser, activeRoom, currentRoomId]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
