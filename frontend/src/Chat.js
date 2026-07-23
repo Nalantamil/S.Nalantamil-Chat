@@ -69,6 +69,10 @@ function Chat({ username, onLogout }) {
   const [showConnected, setShowConnected] = useState(false);
   const [allUsers, setAllUsers] = useState([]);
 
+  // ===== MOBILE DETECTION (single source of truth — everything below reads this,
+  // instead of scattered window.matchMedia() calls that could disagree with the CSS) =====
+  const [isMobile, setIsMobile] = useState(() => (typeof window !== 'undefined' ? window.innerWidth <= 768 : false));
+
   // ===== NAVIGATION STATE =====
   const [activeRoom, setActiveRoom] = useState(null); // null | 'general' | 'dm'
   const [activeDMUser, setActiveDMUser] = useState(null);
@@ -120,6 +124,13 @@ function Chat({ username, onLogout }) {
     return () => { window.removeEventListener('focus', onFocus); window.removeEventListener('blur', onBlur); };
   }, []);
 
+  // ===== KEEP isMobile IN SYNC WITH ACTUAL VIEWPORT (resize / rotate) =====
+  useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth <= 768);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+
   useEffect(() => {
     const wakeUp = async () => {
       try { await axios.get('https://s-nalantamil-chat.onrender.com/'); } catch (err) {}
@@ -158,10 +169,10 @@ function Chat({ username, onLogout }) {
 
   // ===== ON MOBILE, CLOSE THE DRAWER WHENEVER YOU LAND ON/SWITCH A CHAT =====
   useEffect(() => {
-    if (activeRoom && window.matchMedia('(max-width: 768px)').matches) {
+    if (activeRoom && isMobile) {
       setSidebarOpen(false);
     }
-  }, [activeRoom, activeDMUser]);
+  }, [activeRoom, activeDMUser, isMobile]);
 
   const getDateLabel = (timestamp) => {
     if (!timestamp) return '';
@@ -537,14 +548,14 @@ function Chat({ username, onLogout }) {
   // Drag left-to-right to open, right-to-left to close. Only active on mobile,
   // and only once a chat is open (the full-list screen doesn't need it).
   const handleTouchStart = (e) => {
-    if (!window.matchMedia('(max-width: 768px)').matches || !activeRoom) return;
+    if (!isMobile || !activeRoom) return;
     const t = e.touches[0];
     touchState.current = { startX: t.clientX, startY: t.clientY, currentX: t.clientX, dragging: true, horizontal: false };
     if (sidebarRef.current) sidebarRef.current.style.transition = 'none';
   };
 
   const handleTouchMove = (e) => {
-    if (!window.matchMedia('(max-width: 768px)').matches || !activeRoom) return;
+    if (!isMobile || !activeRoom) return;
     const ts = touchState.current;
     if (!ts.dragging || !sidebarRef.current) return;
     const t = e.touches[0];
@@ -569,7 +580,7 @@ function Chat({ username, onLogout }) {
   };
 
   const handleTouchEnd = () => {
-    if (!window.matchMedia('(max-width: 768px)').matches || !activeRoom) return;
+    if (!isMobile || !activeRoom) return;
     const ts = touchState.current;
     if (!ts.dragging) return;
     ts.dragging = false;
@@ -621,6 +632,44 @@ function Chat({ username, onLogout }) {
     if (words.length > 7) return words.slice(0, 7).join(' ') + '...';
     return last.text || '';
   };
+
+  // ===== DYNAMIC SIDEBAR STYLE — computed in JS and applied inline so it can never
+  // be silently overridden by a stylesheet rule (this was the actual bug: CSS
+  // `!important` rules were winning over the state changes) =====
+  const sidebarDynamicStyle = isMobile
+    ? (activeRoom
+        ? {
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            width: '82vw',
+            minWidth: 0,
+            maxWidth: '320px',
+            height: '100vh',
+            zIndex: 70,
+            transform: sidebarOpen ? 'translateX(0)' : 'translateX(-100%)',
+            transition: 'transform 0.35s cubic-bezier(0.16,1,0.3,1), box-shadow 0.35s ease',
+            boxShadow: sidebarOpen ? '12px 0 50px rgba(102,126,234,0.25)' : 'none',
+            background: 'rgba(10,8,25,0.98)',
+            backdropFilter: 'blur(12px)',
+            opacity: 1,
+          }
+        : {
+            position: 'relative',
+            width: '100%',
+            minWidth: '100%',
+            maxWidth: '100%',
+            height: '100vh',
+            transform: 'none',
+            opacity: 1,
+          })
+    : {
+        width: sidebarOpen ? '300px' : '0px',
+        minWidth: sidebarOpen ? '300px' : '0px',
+        opacity: sidebarOpen ? 1 : 0,
+      };
+
+  const chatMainDynamicStyle = isMobile ? { display: activeRoom ? 'flex' : 'none' } : undefined;
 
   return (
     <>
@@ -678,15 +727,11 @@ function Chat({ username, onLogout }) {
         .reconnect-dot { width: 8px; height: 8px; background: white; border-radius: 50%; flex-shrink: 0; }
 
         .sidebar {
-          position: relative;
-          width: ${sidebarOpen ? '300px' : '0px'};
-          min-width: ${sidebarOpen ? '300px' : '0px'};
           background: rgba(0,0,0,0.35);
           border-right: 1px solid rgba(255,255,255,0.07);
           display: flex; flex-direction: column;
           transition: width 0.35s cubic-bezier(0.4,0,0.2,1), min-width 0.35s cubic-bezier(0.4,0,0.2,1), opacity 0.3s ease;
           overflow: hidden;
-          opacity: ${sidebarOpen ? '1' : '0'};
         }
 
         .sidebar-logo { padding: 20px 20px 14px; border-bottom: 1px solid rgba(255,255,255,0.07); }
@@ -741,25 +786,21 @@ function Chat({ username, onLogout }) {
         .ripple-btn::after { content: ''; position: absolute; width: 10px; height: 10px; background: rgba(255,255,255,0.3); border-radius: 50%; top: 50%; left: 50%; transform: translate(-50%,-50%) scale(0); opacity: 1; }
         .ripple-btn:active::after { animation: ripple 0.4s ease-out; }
 
-        /* ===== MOBILE BACK BUTTON — hidden on desktop ===== */
         .mobile-back-btn {
-          display: none;
           background: rgba(255,255,255,0.08);
           border: 1px solid rgba(255,255,255,0.12);
           color: white;
           width: 32px; height: 32px; border-radius: 9px;
-          align-items: center; justify-content: center;
+          display: flex; align-items: center; justify-content: center;
           font-size: 17px; cursor: pointer; flex-shrink: 0;
         }
         .mobile-back-btn:hover { background: rgba(255,255,255,0.15); }
 
-        /* ===== MOBILE HAMBURGER (morphs into an X) — opens/closes the slide drawer ===== */
         .mobile-menu-btn {
-          display: none;
           background: rgba(255,255,255,0.08);
           border: 1px solid rgba(255,255,255,0.12);
           width: 32px; height: 32px; border-radius: 9px;
-          align-items: center; justify-content: center;
+          display: flex; align-items: center; justify-content: center;
           cursor: pointer; flex-shrink: 0;
         }
         .mobile-menu-bars { position: relative; width: 15px; height: 11px; display: block; }
@@ -775,11 +816,20 @@ function Chat({ username, onLogout }) {
         .mobile-menu-btn.open .mobile-menu-bars span:nth-child(2) { opacity: 0; }
         .mobile-menu-btn.open .mobile-menu-bars span:nth-child(3) { top: 4.5px; transform: rotate(-45deg); }
 
-        /* ===== MOBILE DRAWER OVERLAY + EDGE SWIPE STRIP — hidden on desktop ===== */
-        .mobile-drawer-overlay { display: none; }
-        .mobile-edge-grab { display: none; }
+        .mobile-drawer-overlay {
+          position: fixed; inset: 0;
+          background: rgba(0,0,0,0.55);
+          backdrop-filter: blur(3px);
+          z-index: 65;
+          animation: fadeIn 0.25s ease;
+        }
 
-        /* ===== WELCOME / GREETING SCREEN (desktop right panel) ===== */
+        .mobile-edge-grab {
+          position: fixed; top: 0; left: 0;
+          height: 100%; width: 14px;
+          z-index: 68;
+        }
+
         .welcome-screen {
           flex: 1;
           display: flex;
@@ -1024,55 +1074,11 @@ function Chat({ username, onLogout }) {
           .chat-layout { flex-direction: row; }
 
           .sidebar {
-            opacity: 1 !important;
             border-right: none;
             flex-direction: column !important;
             padding: 0 !important;
             overflow-y: auto !important;
             display: flex !important;
-            ${activeRoom ? `
-              position: fixed;
-              top: 0; left: 0;
-              width: 82vw !important;
-              min-width: 0 !important;
-              max-width: 320px !important;
-              height: 100vh;
-              z-index: 70;
-              transform: ${sidebarOpen ? 'translateX(0)' : 'translateX(-100%)'};
-              transition: transform 0.35s cubic-bezier(0.16,1,0.3,1), box-shadow 0.35s ease;
-              box-shadow: ${sidebarOpen ? '12px 0 50px rgba(102,126,234,0.25)' : 'none'};
-              background: rgba(10,8,25,0.98);
-              backdrop-filter: blur(12px);
-            ` : `
-              position: relative;
-              width: 100% !important;
-              min-width: 100% !important;
-              max-width: 100% !important;
-              height: 100vh;
-              transform: none;
-            `}
-          }
-
-          .chat-main {
-            width: 100%;
-            height: 100vh;
-            display: ${activeRoom ? 'flex' : 'none'} !important;
-          }
-
-          .mobile-drawer-overlay {
-            display: ${(activeRoom && sidebarOpen) ? 'block' : 'none'};
-            position: fixed; inset: 0;
-            background: rgba(0,0,0,0.55);
-            backdrop-filter: blur(3px);
-            z-index: 65;
-            animation: fadeIn 0.25s ease;
-          }
-
-          .mobile-edge-grab {
-            display: ${(activeRoom && !sidebarOpen) ? 'block' : 'none'};
-            position: fixed; top: 0; left: 0;
-            height: 100%; width: 14px;
-            z-index: 68;
           }
 
           .sidebar-logo { padding: 18px 18px 14px !important; }
@@ -1089,10 +1095,6 @@ function Chat({ username, onLogout }) {
           .user-name { font-size: 13px !important; }
           .user-status { display: block !important; }
           .icon-btn { width: 30px !important; height: 30px !important; font-size: 14px !important; }
-
-          .sidebar-toggle { display: none !important; }
-          .mobile-back-btn { display: flex !important; }
-          .mobile-menu-btn { display: flex !important; }
 
           .chat-header { padding: 12px 14px !important; gap: 10px !important; }
           .chat-header-avatar { width: 30px !important; height: 30px !important; font-size: 14px !important; border-radius: 8px !important; }
@@ -1228,18 +1230,23 @@ function Chat({ username, onLogout }) {
       )}
 
       <div className="chat-layout">
-        <div className="mobile-drawer-overlay" onClick={() => setSidebarOpen(false)}></div>
+        {isMobile && activeRoom && sidebarOpen && (
+          <div className="mobile-drawer-overlay" onClick={() => setSidebarOpen(false)}></div>
+        )}
 
-        <div
-          className="mobile-edge-grab"
-          onTouchStart={handleTouchStart}
-          onTouchMove={handleTouchMove}
-          onTouchEnd={handleTouchEnd}
-        ></div>
+        {isMobile && activeRoom && !sidebarOpen && (
+          <div
+            className="mobile-edge-grab"
+            onTouchStart={handleTouchStart}
+            onTouchMove={handleTouchMove}
+            onTouchEnd={handleTouchEnd}
+          ></div>
+        )}
 
         <div
           className="sidebar"
           ref={sidebarRef}
+          style={sidebarDynamicStyle}
           onTouchStart={handleTouchStart}
           onTouchMove={handleTouchMove}
           onTouchEnd={handleTouchEnd}
@@ -1325,7 +1332,7 @@ function Chat({ username, onLogout }) {
           </div>
         </div>
 
-        <div className="chat-main" onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop} onPaste={handlePaste}>
+        <div className="chat-main" style={chatMainDynamicStyle} onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop} onPaste={handlePaste}>
           {activeRoom === null ? (
             <div className="welcome-screen">
               <div className="welcome-icon-circle">💬</div>
@@ -1336,19 +1343,25 @@ function Chat({ username, onLogout }) {
           ) : (
             <>
               <div className="chat-header">
-                <button className="sidebar-toggle ripple-btn" onClick={() => setSidebarOpen(!sidebarOpen)} title="Collapse list">
-                  {sidebarOpen ? '◀' : '▶'}
-                </button>
-                <button className="mobile-back-btn ripple-btn" onClick={backToList} aria-label="Back to chat list">
-                  ←
-                </button>
-                <button
-                  className={`mobile-menu-btn ripple-btn ${sidebarOpen ? 'open' : ''}`}
-                  onClick={() => setSidebarOpen(!sidebarOpen)}
-                  aria-label={sidebarOpen ? 'Close menu' : 'Open menu'}
-                >
-                  <span className="mobile-menu-bars"><span></span><span></span><span></span></span>
-                </button>
+                {!isMobile && (
+                  <button className="sidebar-toggle ripple-btn" onClick={() => setSidebarOpen(!sidebarOpen)} title="Collapse list">
+                    {sidebarOpen ? '◀' : '▶'}
+                  </button>
+                )}
+                {isMobile && (
+                  <button className="mobile-back-btn ripple-btn" onClick={backToList} aria-label="Back to chat list">
+                    ←
+                  </button>
+                )}
+                {isMobile && (
+                  <button
+                    className={`mobile-menu-btn ripple-btn ${sidebarOpen ? 'open' : ''}`}
+                    onClick={() => setSidebarOpen(!sidebarOpen)}
+                    aria-label={sidebarOpen ? 'Close menu' : 'Open menu'}
+                  >
+                    <span className="mobile-menu-bars"><span></span><span></span><span></span></span>
+                  </button>
+                )}
                 <div className="chat-header-avatar">
                   {activeRoom === 'general' ? '🌐' : (() => {
                     const dmUser = allUsers.find(u => u.username === activeDMUser);
