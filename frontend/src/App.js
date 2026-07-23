@@ -270,33 +270,47 @@ function App() {
         .success-sub { font-size: 13px; color: rgba(255,255,255,0.5); display: flex; align-items: center; gap: 8px; }
 
         @media (max-width: 480px) {
-          .page { padding: 16px; }
-          .card { width: 100%; max-width: 380px; padding: 32px 24px; border-radius: 20px; }
-          .logo-icon { font-size: 48px; }
-          .logo-text { font-size: 26px; letter-spacing: 1px; }
-          .logo-sub { font-size: 12px; }
-          .tabs { margin-bottom: 22px; }
+          .page {
+            padding: 28px 16px 40px;
+            align-items: flex-start;
+            justify-content: center;
+            overflow-y: auto;
+          }
+          .card {
+            width: 100%;
+            max-width: 400px;
+            margin-top: 24px;
+            padding: 30px 22px 26px;
+            border-radius: 22px;
+          }
+          .logo-area { margin-bottom: 22px; }
+          .logo-icon { font-size: 44px; margin-bottom: 6px; }
+          .logo-text { font-size: 24px; letter-spacing: 1px; }
+          .logo-sub { font-size: 11px; }
+          .tabs { margin-bottom: 20px; }
           .tab { padding: 9px; font-size: 13px; }
           .input-field { padding: 12px 40px 12px 42px; font-size: 13px; }
           .input-icon { left: 14px; top: 23px; font-size: 16px; }
           .password-toggle-btn { right: 12px; top: 23px; font-size: 12px; }
-          .form-row { flex-direction: column; align-items: flex-start; gap: 10px; }
+          .form-row { flex-direction: column; align-items: flex-start; gap: 10px; margin-bottom: 16px; }
+          .remember-me input { width: 17px; height: 17px; }
           .submit-btn { padding: 13px; font-size: 15px; }
           .strength-bar-wrap { margin: 6px 2px 10px; }
           .strength-label { font-size: 10px; }
           .field-error-text { font-size: 11px; }
           .message { font-size: 12px; padding: 9px 14px; }
           .forgot-msg { font-size: 11px; padding: 8px 12px; }
-          .footer-text { font-size: 12px; }
+          .footer-text { font-size: 12px; margin-top: 2px; }
+          .divider { margin: 16px 0; }
           .blob1 { width: 250px; height: 250px; }
           .blob2 { width: 200px; height: 200px; }
           .blob3 { width: 140px; height: 140px; }
         }
 
         @media (max-width: 340px) {
-          .card { padding: 24px 18px; }
-          .logo-icon { font-size: 40px; }
-          .logo-text { font-size: 22px; }
+          .card { padding: 24px 18px 22px; margin-top: 16px; }
+          .logo-icon { font-size: 38px; }
+          .logo-text { font-size: 21px; }
         }
       `}</style>
 
