@@ -88,7 +88,10 @@ function Chat({ username, onLogout }) {
   const REACTIONS = ['👍', '❤️', '😂', '😮', '😢'];
 
   const currentRoomId = activeRoom === 'general' ? 'general' : getDMRoomId(username, activeDMUser);
-  const currentMessages = activeRoom === 'general' ? messages : (dmMessages[currentRoomId] || []);
+  const currentMessages = React.useMemo(() => 
+    activeRoom === 'general' ? messages : (dmMessages[currentRoomId] || []),
+    [activeRoom, messages, dmMessages, currentRoomId]
+  );
 
   const sortedUsers = [...allUsers].sort((a, b) => {
     const roomA = getDMRoomId(username, a.username);
