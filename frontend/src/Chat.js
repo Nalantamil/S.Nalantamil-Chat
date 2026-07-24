@@ -45,6 +45,15 @@ function Chat({ username, onLogout }) {
   const [editText, setEditText] = useState('');
   const [typingUsers, setTypingUsers] = useState([]);
 
+  // ===== APP LOADING SCREEN — covers the whole app until the essential startup
+  // data (messages, users, profile) actually arrives. On a Render free-tier
+  // backend the first request after a while can take a long time to wake the
+  // server up; this keeps the user informed instead of showing a blank/broken
+  // screen they might click around on. It waits exactly as long as it needs to,
+  // no fixed timer — fast connections clear it almost instantly. =====
+  const [appLoading, setAppLoading] = useState(true);
+  const [loadingMessage, setLoadingMessage] = useState('Connecting to Nalantamil...');
+
   // ===== DRAWER STATE — only meaningful on narrow/mobile screens (see isMobile below).
   // On wide screens the list is just always visible, this is ignored. =====
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -145,6 +154,16 @@ function Chat({ username, onLogout }) {
     return () => clearInterval(interval);
   }, []);
 
+  // ===== LOADING SCREEN MESSAGE — changes over time so a slow (cold-start) backend
+  // doesn't just look frozen. Only runs while appLoading is true. =====
+  useEffect(() => {
+    if (!appLoading) return;
+    const t1 = setTimeout(() => setLoadingMessage('Waking up the server — this can take a moment on the first visit...'), 4000);
+    const t2 = setTimeout(() => setLoadingMessage('Still connecting... almost there, thanks for your patience!'), 15000);
+    const t3 = setTimeout(() => setLoadingMessage("This is taking longer than usual, but we're still trying..."), 40000);
+    return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
+  }, [appLoading]);
+
   // ===== RESTORE LAST OPEN CHAT AFTER A REFRESH =====
   useEffect(() => {
     const savedRoom = localStorage.getItem(`chat_activeRoom_${username}`);
@@ -241,10 +260,8 @@ function Chat({ username, onLogout }) {
   };
 
   // ===== PREFETCH EVERY DM'S HISTORY RIGHT AFTER LOGIN =====
-  // This used to only record the timestamp (for sorting) but never actually stored the
-  // messages, so the "last message" preview under each name stayed on "Click to chat"
-  // until you opened that DM once. Now it stores the messages too, so previews (and
-  // the correct sort order) are correct immediately after login.
+  // Stores both the timestamp (for sorting) and the actual messages (for the
+  // "last message" preview under each name), so previews are correct immediately.
   useEffect(() => {
     if (allUsers.length === 0) return;
     allUsers.forEach(async (user) => {
@@ -261,16 +278,35 @@ function Chat({ username, onLogout }) {
     });
   }, [allUsers, username]);
 
+  // ===== MAIN STARTUP LOAD + SOCKET WIRING =====
   useEffect(() => {
-    axios.get('https://s-nalantamil-chat.onrender.com/messages').then(res => setMessages(res.data));
+    let cancelled = false;
+
+    // Wait for the essential startup data together, however long it takes
+    // (fast on a warm server, slow on a cold Render free-tier one), then
+    // clear the loading screen. This never times out on its own — it only
+    // ever finishes when the requests actually settle, success or failure.
+    const loadInitialData = async () => {
+      const results = await Promise.allSettled([
+        axios.get('https://s-nalantamil-chat.onrender.com/messages'),
+        axios.get('https://s-nalantamil-chat.onrender.com/users'),
+        axios.get(`https://s-nalantamil-chat.onrender.com/profile/${username}`),
+      ]);
+      if (cancelled) return;
+
+      const [messagesResult, usersResult, profileResult] = results;
+      if (messagesResult.status === 'fulfilled') setMessages(messagesResult.value.data);
+      if (usersResult.status === 'fulfilled') setAllUsers(usersResult.value.data.filter(u => u.username !== username));
+      if (profileResult.status === 'fulfilled') {
+        const data = profileResult.value.data;
+        setProfile(data);
+        setProfileEdit({ bio: data.bio || '', avatar_color: data.avatar_color || '#667eea', avatar_url: data.avatar_url || '', current_password: '', new_password: '' });
+      }
+      setAppLoading(false);
+    };
+    loadInitialData();
+
     axios.get('https://s-nalantamil-chat.onrender.com/pinned').then(res => setPinnedMessages(res.data)).catch(() => {});
-    axios.get('https://s-nalantamil-chat.onrender.com/users').then(res => {
-      setAllUsers(res.data.filter(u => u.username !== username));
-    }).catch(() => {});
-    axios.get(`https://s-nalantamil-chat.onrender.com/profile/${username}`).then(res => {
-      setProfile(res.data);
-      setProfileEdit({ bio: res.data.bio || '', avatar_color: res.data.avatar_color || '#667eea', avatar_url: res.data.avatar_url || '', current_password: '', new_password: '' });
-    }).catch(() => {});
 
     socket.emit('join', { username });
 
@@ -347,6 +383,7 @@ function Chat({ username, onLogout }) {
     socket.on('message_unpinned', ({ message_id }) => setPinnedMessages(prev => prev.filter(p => p.message_id !== message_id)));
 
     return () => {
+      cancelled = true;
       socket.off('connect'); socket.off('disconnect'); socket.off('reconnect_attempt');
       socket.off('reconnect'); socket.off('message'); socket.off('dm_message');
       socket.off('message_deleted'); socket.off('message_edited'); socket.off('reaction_updated');
@@ -674,6 +711,83 @@ function Chat({ username, onLogout }) {
         transform: 'none',
         opacity: 1,
       };
+
+  // ===== LOADING SCREEN — self-contained, renders instead of everything else
+  // until the essential startup data has arrived. =====
+  if (appLoading) {
+    return (
+      <div className="app-loading-screen">
+        <style>{`
+          * { margin: 0; padding: 0; box-sizing: border-box; }
+          @keyframes gradientShift {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+          }
+          @keyframes float {
+            0%, 100% { transform: translateY(0px); }
+            50% { transform: translateY(-10px); }
+          }
+          @keyframes spin { to { transform: rotate(360deg); } }
+          @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+          @keyframes pulse {
+            0%, 100% { opacity: 0.35; transform: scale(1); }
+            50% { opacity: 1; transform: scale(1.3); }
+          }
+          .app-loading-screen {
+            position: fixed; inset: 0;
+            display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+            gap: 20px;
+            background: linear-gradient(-45deg, #0f0c29, #302b63, #24243e, #1a1a2e);
+            background-size: 400% 400%;
+            animation: gradientShift 8s ease infinite;
+            font-family: 'Segoe UI', sans-serif;
+            z-index: 999999;
+            padding: 24px;
+            text-align: center;
+          }
+          .app-loading-logo {
+            font-size: 56px;
+            animation: float 3s ease-in-out infinite;
+            filter: drop-shadow(0 0 25px rgba(102,126,234,0.6));
+          }
+          .app-loading-title {
+            font-size: 26px; font-weight: 800;
+            background: linear-gradient(135deg, #667eea, #f093fb);
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+            letter-spacing: 2px;
+          }
+          .app-loading-spinner {
+            width: 40px; height: 40px;
+            border: 3px solid rgba(255,255,255,0.15);
+            border-top-color: #667eea;
+            border-radius: 50%;
+            animation: spin 0.9s linear infinite;
+          }
+          .app-loading-message {
+            font-size: 13px; color: rgba(255,255,255,0.5);
+            max-width: 320px; line-height: 1.6;
+            min-height: 40px;
+            animation: fadeIn 0.4s ease;
+          }
+          .app-loading-dots { display: flex; gap: 6px; }
+          .app-loading-dots span {
+            width: 6px; height: 6px; border-radius: 50%;
+            background: rgba(102,126,234,0.7);
+            animation: pulse 1.4s ease-in-out infinite;
+          }
+          .app-loading-dots span:nth-child(2) { animation-delay: 0.2s; }
+          .app-loading-dots span:nth-child(3) { animation-delay: 0.4s; }
+        `}</style>
+        <div className="app-loading-logo">💬</div>
+        <div className="app-loading-title">Nalantamil</div>
+        <div className="app-loading-spinner"></div>
+        <div className="app-loading-message">{loadingMessage}</div>
+        <div className="app-loading-dots"><span></span><span></span><span></span></div>
+      </div>
+    );
+  }
 
   return (
     <>
