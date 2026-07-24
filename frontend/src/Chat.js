@@ -45,8 +45,8 @@ function Chat({ username, onLogout }) {
   const [editText, setEditText] = useState('');
   const [typingUsers, setTypingUsers] = useState([]);
 
-  // ===== DRAWER STATE — only meaningful on narrow/mobile screens (see isMobile below).
-  // On wide screens the list is just always visible, this is ignored. =====
+  // ===== DRAWER STATE — only used once you're inside a chat (see sidebarDynamicStyle
+  // below). On the welcome/greeting screen the list is just always visible. =====
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const [showBgPicker, setShowBgPicker] = useState(false);
@@ -73,9 +73,9 @@ function Chat({ username, onLogout }) {
   const [showConnected, setShowConnected] = useState(false);
   const [allUsers, setAllUsers] = useState([]);
 
-  // ===== NARROW/MOBILE DETECTION — the single switch between "list always visible"
-  // (wide browser) and "list is a drawer you open by click/drag" (narrow browser or
-  // phone). Stays in sync as the window is resized/minimized. =====
+  // ===== NARROW/MOBILE DETECTION — used ONLY to size the drawer's width and to decide
+  // the welcome-screen layout (split view on wide screens vs full list on narrow ones).
+  // It no longer gates whether the in-chat drawer works — that now works at any width. =====
   const [isMobile, setIsMobile] = useState(() => (typeof window !== 'undefined' ? window.innerWidth <= 768 : false));
 
   // ===== NAVIGATION STATE =====
@@ -172,13 +172,12 @@ function Chat({ username, onLogout }) {
     }
   }, [activeRoom, activeDMUser, username]);
 
-  // ===== ON NARROW/MOBILE SCREENS, CLOSE THE DRAWER WHENEVER YOU LAND ON/SWITCH A CHAT
-  // (irrelevant on wide screens, where the list is always visible regardless) =====
+  // ===== CLOSE THE DRAWER WHENEVER YOU LAND ON/SWITCH A CHAT — on any screen size =====
   useEffect(() => {
-    if (activeRoom && isMobile) {
+    if (activeRoom) {
       setSidebarOpen(false);
     }
-  }, [activeRoom, activeDMUser, isMobile]);
+  }, [activeRoom, activeDMUser]);
 
   const getDateLabel = (timestamp) => {
     if (!timestamp) return '';
@@ -240,11 +239,7 @@ function Chat({ username, onLogout }) {
     setActiveDMUser(null);
   };
 
-  // ===== PREFETCH EVERY DM'S HISTORY RIGHT AFTER LOGIN =====
-  // This used to only record the timestamp (for sorting) but never actually stored the
-  // messages, so the "last message" preview under each name stayed on "Click to chat"
-  // until you opened that DM once. Now it stores the messages too, so previews (and
-  // the correct sort order) are correct immediately after login.
+  // ===== PREFETCH EVERY DM'S HISTORY RIGHT AFTER LOGIN — untouched, working. =====
   useEffect(() => {
     if (allUsers.length === 0) return;
     allUsers.forEach(async (user) => {
@@ -557,10 +552,9 @@ function Chat({ username, onLogout }) {
   };
 
   // ===== DRAWER DRAG GESTURES (Pointer Events — mouse on desktop, finger on mobile).
-  // Only does anything when isMobile is true — on wide screens the list is always
-  // visible so dragging it is a no-op. =====
+  // Now works whenever you're inside a chat, on any screen size. =====
   const handleDragStart = (e) => {
-    if (!isMobile) return;
+    if (!activeRoom) return;
     const x = e.clientX, y = e.clientY;
     dragState.current = { startX: x, startY: y, currentX: x, dragging: true, horizontal: false };
     if (sidebarRef.current) sidebarRef.current.style.transition = 'none';
@@ -568,7 +562,7 @@ function Chat({ username, onLogout }) {
   };
 
   const handleDragMove = (e) => {
-    if (!isMobile) return;
+    if (!activeRoom) return;
     const ds = dragState.current;
     if (!ds.dragging || !sidebarRef.current) return;
     const x = e.clientX, y = e.clientY;
@@ -594,7 +588,7 @@ function Chat({ username, onLogout }) {
   };
 
   const handleDragEnd = () => {
-    if (!isMobile) return;
+    if (!activeRoom) return;
     const ds = dragState.current;
     if (!ds.dragging) return;
     ds.dragging = false;
@@ -648,15 +642,18 @@ function Chat({ username, onLogout }) {
     return last.text || '';
   };
 
-  // ===== SIDEBAR STYLE — normal always-visible panel on wide screens; a slide-out
-  // overlay drawer on narrow/mobile screens. Computed in JS and applied inline so
-  // nothing in the stylesheet can silently override it. =====
-  const sidebarDynamicStyle = isMobile
+  // ===== SIDEBAR STYLE =====
+  // Welcome/greeting screen (activeRoom null): always visible, side-by-side with the
+  // greeting — full width on mobile (matches the original list-only screen), 300px
+  // next to the greeting on wider screens. No drawer here.
+  // Inside a chat (activeRoom set): ALWAYS a slide-out overlay drawer — on any screen
+  // width — closed by default, opened by the hamburger button or by dragging.
+  const sidebarDynamicStyle = activeRoom
     ? {
         position: 'fixed',
         top: 0,
         left: 0,
-        width: 'min(82vw, 320px)',
+        width: isMobile ? 'min(82vw, 320px)' : '320px',
         height: '100vh',
         zIndex: 70,
         transform: sidebarOpen ? 'translateX(0)' : 'translateX(-100%)',
@@ -666,14 +663,9 @@ function Chat({ username, onLogout }) {
         backdropFilter: 'blur(12px)',
         opacity: 1,
       }
-    : {
-        position: 'relative',
-        width: '300px',
-        minWidth: '300px',
-        height: '100vh',
-        transform: 'none',
-        opacity: 1,
-      };
+    : (isMobile
+        ? { position: 'relative', width: '100%', minWidth: '100%', height: '100vh', transform: 'none', opacity: 1 }
+        : { position: 'relative', width: '300px', minWidth: '300px', height: '100vh', transform: 'none', opacity: 1 });
 
   return (
     <>
@@ -1224,11 +1216,11 @@ function Chat({ username, onLogout }) {
       )}
 
       <div className="chat-layout">
-        {isMobile && sidebarOpen && (
+        {activeRoom && sidebarOpen && (
           <div className="mobile-drawer-overlay" onClick={() => setSidebarOpen(false)}></div>
         )}
 
-        {isMobile && !sidebarOpen && (
+        {activeRoom && !sidebarOpen && (
           <div
             className="mobile-edge-grab"
             onPointerDown={handleDragStart}
@@ -1358,15 +1350,13 @@ function Chat({ username, onLogout }) {
                 <button className="mobile-back-btn ripple-btn" onClick={backToList} aria-label="Back to chat list">
                   ←
                 </button>
-                {isMobile && (
-                  <button
-                    className={`mobile-menu-btn ripple-btn ${sidebarOpen ? 'open' : ''}`}
-                    onClick={() => setSidebarOpen(!sidebarOpen)}
-                    aria-label={sidebarOpen ? 'Close menu' : 'Open menu'}
-                  >
-                    <span className="mobile-menu-bars"><span></span><span></span><span></span></span>
-                  </button>
-                )}
+                <button
+                  className={`mobile-menu-btn ripple-btn ${sidebarOpen ? 'open' : ''}`}
+                  onClick={() => setSidebarOpen(!sidebarOpen)}
+                  aria-label={sidebarOpen ? 'Close menu' : 'Open menu'}
+                >
+                  <span className="mobile-menu-bars"><span></span><span></span><span></span></span>
+                </button>
                 <div className="chat-header-avatar">
                   {activeRoom === 'general' ? '🌐' : (() => {
                     const dmUser = allUsers.find(u => u.username === activeDMUser);
