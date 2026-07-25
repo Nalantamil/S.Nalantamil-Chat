@@ -169,7 +169,7 @@ function App() {
           50% { opacity: 0.8; transform: scale(1.05); }
         }
         @keyframes slideIn {
-          from { opacity: 0; transform: translateY(30px); }
+          from { opacity: 0; transform: translateY(20px); }
           to { opacity: 1; transform: translateY(0); }
         }
         @keyframes spin { to { transform: rotate(360deg); } }
@@ -178,6 +178,23 @@ function App() {
           25% { transform: translateX(-4px); }
           75% { transform: translateX(4px); }
         }
+        @keyframes underlineIn {
+          from { transform: scaleX(0); }
+          to { transform: scaleX(1); }
+        }
+        @keyframes rippleBtn {
+          to { transform: scale(3); opacity: 0; }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+          *, *::before, *::after {
+            animation-duration: 0.01ms !important;
+            animation-iteration-count: 1 !important;
+            transition-duration: 0.01ms !important;
+            scroll-behavior: auto !important;
+          }
+        }
+
         body {
           min-height: 100vh;
           background: linear-gradient(-45deg, #0f0c29, #302b63, #24243e, #1a1a2e, #0f3460, #533483);
@@ -197,19 +214,19 @@ function App() {
         .blob1 { width: 400px; height: 400px; background: rgba(102,126,234,0.3); top: -100px; left: -100px; }
         .blob2 { width: 300px; height: 300px; background: rgba(118,75,162,0.3); bottom: -80px; right: -80px; animation-delay: 2s; }
         .blob3 { width: 200px; height: 200px; background: rgba(79,172,254,0.2); top: 50%; left: 50%; animation-delay: 1s; }
-        .card { background: rgba(255,255,255,0.08); backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.15); border-radius: 24px; padding: 48px 40px; width: 400px; box-shadow: 0 25px 50px rgba(0,0,0,0.5); animation: slideIn 0.6s ease; position: relative; z-index: 10; }
+        .card { background: rgba(255,255,255,0.06); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border: 1px solid rgba(255,255,255,0.1); border-radius: 24px; padding: 48px 40px; width: 400px; box-shadow: 0 25px 50px rgba(0,0,0,0.5); animation: slideIn 0.4s ease-out; position: relative; z-index: 10; }
         .logo-area { text-align: center; margin-bottom: 32px; animation: float 6s ease-in-out infinite; }
         .logo-icon { font-size: 62px; display: block; margin-bottom: 10px; filter: drop-shadow(0 0 20px rgba(102,126,234,0.8)); }
         .logo-text { font-size: 33px; font-weight: 800; background: linear-gradient(135deg, #667eea, #f093fb); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; letter-spacing: 2px; }
         .logo-sub { color: rgba(255,255,255,0.5); font-size: 13px; margin-top: 4px; letter-spacing: 1px; }
-        .tabs { display: flex; background: rgba(255,255,255,0.05); border-radius: 12px; padding: 4px; margin-bottom: 28px; border: 1px solid rgba(255,255,255,0.08); }
-        .tab { flex: 1; padding: 10px; text-align: center; border-radius: 9px; cursor: pointer; font-size: 14px; font-weight: 600; transition: all 0.3s ease; color: rgba(255,255,255,0.5); border: none; background: transparent; }
-        .tab.active { background: linear-gradient(135deg, #667eea, #764ba2); color: white; box-shadow: 0 4px 15px rgba(102,126,234,0.4); }
+        .tabs { display: flex; background: rgba(255,255,255,0.05); border-radius: 12px; padding: 4px; margin-bottom: 28px; border: 1px solid rgba(255,255,255,0.08); position: relative; }
+        .tab { flex: 1; padding: 10px; text-align: center; border-radius: 9px; cursor: pointer; font-size: 14px; font-weight: 600; transition: color 0.25s ease, background 0.25s ease; color: rgba(255,255,255,0.5); border: none; background: transparent; position: relative; z-index: 1; }
+        .tab.active { background: linear-gradient(135deg, #667eea, #764ba2); color: white; box-shadow: 0 4px 15px rgba(102,126,234,0.4); transition: background 0.25s ease, color 0.25s ease, transform 0.25s cubic-bezier(0.34,1.56,0.64,1); }
         .input-group { margin-bottom: 6px; position: relative; }
         .input-icon { position: absolute; left: 16px; top: 26px; transform: translateY(-50%); font-size: 18px; z-index: 1; }
-        .input-field { width: 100%; padding: 14px 44px 14px 46px; background: rgba(255,255,255,0.07); border: 1.5px solid rgba(255,255,255,0.1); border-radius: 12px; color: white; font-size: 14px; outline: none; transition: all 0.3s ease; }
+        .input-field { width: 100%; padding: 14px 44px 14px 46px; background: rgba(255,255,255,0.07); border: 1.5px solid rgba(255,255,255,0.1); border-radius: 12px; color: white; font-size: 14px; outline: none; transition: border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease; }
         .input-field::placeholder { color: rgba(255,255,255,0.35); }
-        .input-field.focused { border-color: #667eea; background: rgba(102,126,234,0.1); box-shadow: 0 0 0 3px rgba(102,126,234,0.15); }
+        .input-field.focused { border-color: #7c3aed; background: rgba(124,58,237,0.1); box-shadow: 0 0 0 2px rgba(124,58,237,0.5); }
         .input-field.field-error { border-color: #e74c3c; }
         .field-error-text { color: #e74c3c; font-size: 12px; margin: 4px 2px 12px; display: flex; align-items: center; gap: 4px; animation: shake 0.3s ease; }
         .password-toggle-btn { position: absolute; right: 14px; top: 26px; transform: translateY(-50%); background: none; border: none; color: rgba(255,255,255,0.5); font-size: 13px; cursor: pointer; font-weight: 600; letter-spacing: 0.5px; padding: 4px; transition: color 0.2s ease; }
