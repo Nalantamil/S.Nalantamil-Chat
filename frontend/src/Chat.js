@@ -82,6 +82,12 @@ function Chat({ username, onLogout }) {
   const [showConnected, setShowConnected] = useState(false);
   const [allUsers, setAllUsers] = useState([]);
 
+  // ===== LIGHTBOX — full-screen image viewer state (UI-only, presentational) =====
+  const [lightboxImage, setLightboxImage] = useState(null);
+
+  // ===== SEND BUTTON PULSE — brief icon flash on send (UI-only, presentational) =====
+  const [sendPulse, setSendPulse] = useState(false);
+
   // ===== NARROW/MOBILE DETECTION — the single switch between "list always visible"
   // (wide browser) and "list is a drawer you open by click/drag" (narrow browser or
   // phone). Stays in sync as the window is resized/minimized. =====
@@ -216,6 +222,27 @@ function Chat({ username, onLogout }) {
     const curr = msgs[index];
     if (!prev.timestamp || !curr.timestamp) return false;
     return new Date(prev.timestamp + 'Z').toDateString() !== new Date(curr.timestamp + 'Z').toDateString();
+  };
+
+  // ===== MESSAGE GROUPING (Discord/Slack-style) — purely presentational: decides
+  // whether consecutive messages from the same sender within 3 minutes should be
+  // visually grouped (name shown once, avatar shown once at the bottom of the run).
+  // Does not touch message data, socket events, or state management. =====
+  const GROUP_WINDOW_MS = 3 * 60 * 1000;
+  const isGroupedWithPrev = (msgs, index) => {
+    if (index <= 0) return false;
+    const prev = msgs[index - 1];
+    const curr = msgs[index];
+    if (!prev || prev.type === 'system' || curr.type === 'system') return false;
+    if (prev.username !== curr.username) return false;
+    if (!prev.timestamp || !curr.timestamp) return false;
+    if (shouldShowDateSeparator(msgs, index)) return false;
+    const diff = new Date(curr.timestamp + 'Z').getTime() - new Date(prev.timestamp + 'Z').getTime();
+    return diff >= 0 && diff <= GROUP_WINDOW_MS;
+  };
+  const isGroupedWithNext = (msgs, index) => {
+    if (index >= msgs.length - 1) return false;
+    return isGroupedWithPrev(msgs, index + 1);
   };
 
   const fetchDMMessages = async (roomId) => {
@@ -412,6 +439,14 @@ function Chat({ username, onLogout }) {
     }
   }, [showProfile, profile.bio, profile.avatar_color, profile.avatar_url]);
 
+  // ===== CLOSE LIGHTBOX WITH ESCAPE =====
+  useEffect(() => {
+    if (!lightboxImage) return;
+    const onKey = (e) => { if (e.key === 'Escape') setLightboxImage(null); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [lightboxImage]);
+
   const handleInputChange = (e) => {
     setInput(e.target.value);
     if (e.target.value.trim()) {
@@ -425,6 +460,8 @@ function Chat({ username, onLogout }) {
 
   const sendMessage = (e) => {
     e.preventDefault();
+    setSendPulse(true);
+    setTimeout(() => setSendPulse(false), 300);
     if (imageFile) { sendImageMessage(); return; }
     if (!input.trim()) return;
     if (activeRoom === 'general') {
@@ -886,12 +923,23 @@ function Chat({ username, onLogout }) {
           100% { transform: scale(1); }
         }
         @keyframes slideInRight {
-          from { opacity: 0; transform: translate(16px, 12px); }
-          to { opacity: 1; transform: translate(0, 0); }
+          from { opacity: 0; transform: translateX(12px); }
+          to { opacity: 1; transform: translateX(0); }
         }
         @keyframes slideInLeft {
-          from { opacity: 0; transform: translate(-16px, 12px); }
-          to { opacity: 1; transform: translate(0, 0); }
+          from { opacity: 0; transform: translateX(-12px); }
+          to { opacity: 1; transform: translateX(0); }
+        }
+        @keyframes lightboxFadeIn {
+          from { opacity: 0; } to { opacity: 1; }
+        }
+        @keyframes lightboxZoomIn {
+          from { opacity: 0; transform: scale(0.9); } to { opacity: 1; transform: scale(1); }
+        }
+        @keyframes sendFlash {
+          0% { transform: rotate(0deg); }
+          40% { transform: rotate(15deg) scale(1.15); }
+          100% { transform: rotate(0deg); }
         }
 
         @media (prefers-reduced-motion: reduce) {
@@ -909,17 +957,6 @@ function Chat({ username, onLogout }) {
         }
 
         .chat-layout { display: flex; height: 100vh; width: 100vw; font-family: 'Segoe UI', sans-serif; overflow: hidden; position: relative; }
-        .chat-main::before {
-          content: '';
-          position: absolute;
-          top: -20%; left: -10%;
-          width: 60%; height: 60%;
-          background: radial-gradient(circle, rgba(99,102,241,0.16) 0%, rgba(99,102,241,0) 70%);
-          animation: glowDrift 10s ease-in-out infinite;
-          pointer-events: none;
-          z-index: 0;
-        }
-        .chat-header, .messages-area, .input-area, .welcome-screen { position: relative; z-index: 1; }
 
         .connection-banner { position: fixed; top: 0; left: 0; right: 0; z-index: 99999; padding: 10px 20px; display: flex; align-items: center; justify-content: center; gap: 10px; font-size: 13px; font-weight: 600; animation: slideDown 0.3s ease; }
         .connection-banner.reconnecting { background: linear-gradient(135deg, #e67e22, #b45309); color: white; }
@@ -1085,16 +1122,33 @@ function Chat({ username, onLogout }) {
           border-radius: 20px; border: 1px solid rgba(255,255,255,0.07);
         }
 
-        .chat-main { flex: 1; display: flex; flex-direction: column; overflow: hidden; position: relative; width: 100%; }
+        .chat-main { flex: 1; display: flex; flex-direction: column; overflow: hidden; position: relative; width: 100%; background: #07070f; }
+        .chat-main::before {
+          content: '';
+          position: absolute; inset: 0;
+          pointer-events: none;
+          z-index: 0;
+          background:
+            radial-gradient(ellipse 60% 40% at 75% 20%, rgba(99,102,241,0.06) 0%, transparent 60%),
+            radial-gradient(ellipse 50% 60% at 20% 80%, rgba(139,92,246,0.04) 0%, transparent 60%);
+        }
+        .chat-header, .messages-area, .input-area, .welcome-screen { position: relative; z-index: 1; }
 
-        .chat-header { padding: 14px 22px; background: rgba(0,0,0,0.2); border-bottom: 1px solid rgba(255,255,255,0.07); display: flex; align-items: center; gap: 12px; position: relative; }
+        .chat-header { padding: 14px 22px; background: rgba(13,13,26,0.9); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border-bottom: 1px solid rgba(255,255,255,0.05); display: flex; align-items: center; gap: 12px; }
 
-        .chat-header-avatar { width: 36px; height: 36px; border-radius: 9px; background: linear-gradient(135deg, #6366f1, #8b5cf6); display: flex; align-items: center; justify-content: center; font-size: 17px; flex-shrink: 0; overflow: hidden; transition: transform 0.2s, box-shadow 0.2s; }
+        .chat-header-avatar { width: 40px; height: 40px; border-radius: 9px; background: linear-gradient(135deg, #6366f1, #8b5cf6); border: 1.5px solid rgba(99,102,241,0.4); display: flex; align-items: center; justify-content: center; font-size: 17px; flex-shrink: 0; overflow: hidden; transition: transform 0.2s, box-shadow 0.2s; }
         .chat-header-avatar:hover { transform: scale(1.05); box-shadow: 0 0 0 3px rgba(99,102,241,0.35); }
         .chat-header-info { flex: 1; }
-        .chat-header-name { font-size: 14px; font-weight: 700; color: white; }
-        .chat-header-status { font-size: 11px; color: rgba(255,255,255,0.4); margin-top: 2px; display: flex; align-items: center; gap: 5px; }
-        .status-dot { width: 6px; height: 6px; border-radius: 50%; animation: pulse 2s ease-in-out infinite; }
+        .chat-header-name { font-size: 15px; font-weight: 600; color: #f1f5f9; }
+        .chat-header-status { font-size: 12px; color: #6366f1; margin-top: 2px; display: flex; align-items: center; gap: 5px; }
+        .status-dot { position: relative; width: 10px; height: 10px; border-radius: 50%; box-shadow: 0 0 0 2px #07070f; }
+        .status-dot::after {
+          content: '';
+          position: absolute; inset: 0;
+          border-radius: 50%;
+          background: inherit;
+          animation: onlinePing 1.5s ease-out infinite;
+        }
         .msg-count { font-size: 11px; color: rgba(255,255,255,0.3); background: rgba(255,255,255,0.07); padding: 3px 9px; border-radius: 20px; }
 
         .header-btn { background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.12); color: white; width: 30px; height: 30px; border-radius: 9px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 14px; transition: all 0.2s; flex-shrink: 0; }
@@ -1125,54 +1179,64 @@ function Chat({ username, onLogout }) {
         .unpin-btn { background: none; border: none; color: rgba(255,255,255,0.3); font-size: 13px; cursor: pointer; }
         .unpin-btn:hover { color: #ef4444; }
 
-        .messages-area { flex: 1; overflow-y: auto; padding: 18px 22px; display: flex; flex-direction: column; gap: 10px; scroll-behavior: smooth; }
+        .messages-area { flex: 1; overflow-y: auto; padding: 18px 22px; display: flex; flex-direction: column; gap: 3px; scroll-behavior: smooth; }
         .messages-area::-webkit-scrollbar { width: 4px; }
-        .messages-area::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 3px; }
+        .messages-area::-webkit-scrollbar-thumb { background: transparent; border-radius: 3px; transition: background 0.2s; }
+        .messages-area:hover::-webkit-scrollbar-thumb { background: rgba(99,102,241,0.4); }
 
-        .date-separator { display: flex; align-items: center; gap: 10px; align-self: stretch; margin: 4px 0; }
-        .date-separator-line { flex: 1; height: 1px; background: rgba(255,255,255,0.07); }
-        .date-separator-label { font-size: 10px; font-weight: 600; color: rgba(255,255,255,0.28); padding: 2px 9px; background: rgba(255,255,255,0.04); border-radius: 20px; border: 1px solid rgba(255,255,255,0.06); white-space: nowrap; }
+        .date-separator { display: flex; align-items: center; gap: 12px; align-self: stretch; margin: 14px 0 10px; }
+        .date-separator-line { flex: 1; height: 1px; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.06), transparent); }
+        .date-separator-label { font-size: 11px; font-weight: 600; color: #475569; padding: 3px 14px; background: #111120; border-radius: 20px; border: 1px solid rgba(255,255,255,0.07); white-space: nowrap; letter-spacing: 0.06em; }
 
-        .system-msg { text-align: center; color: rgba(255,255,255,0.28); font-size: 11px; padding: 3px 10px; background: rgba(255,255,255,0.03); border-radius: 20px; align-self: center; }
+        .system-msg { text-align: center; color: rgba(255,255,255,0.28); font-size: 11px; padding: 3px 10px; background: rgba(255,255,255,0.03); border-radius: 20px; align-self: center; margin: 4px 0; }
 
-        .msg-row { display: flex; gap: 8px; max-width: 68%; position: relative; }
-        .msg-row.mine { align-self: flex-end; flex-direction: row-reverse; animation: slideInRight 0.25s ease-out; }
-        .msg-row.theirs { align-self: flex-start; animation: slideInLeft 0.25s ease-out; }
-        .msg-row:hover .msg-bubble { transform: scale(1.01); }
+        .msg-row { display: flex; gap: 8px; max-width: 65%; position: relative; margin-top: 10px; }
+        .msg-row.grouped { margin-top: 2px; }
+        .msg-row.mine { align-self: flex-end; flex-direction: row-reverse; max-width: 55%; animation: slideInRight 220ms cubic-bezier(0.34, 1.56, 0.64, 1); }
+        .msg-row.theirs { align-self: flex-start; max-width: 55%; animation: slideInLeft 220ms cubic-bezier(0.34, 1.56, 0.64, 1); }
 
-        .msg-avatar { width: 30px; height: 30px; border-radius: 50%; background: linear-gradient(135deg, #a78bfa, #8b5cf6); display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; color: white; flex-shrink: 0; align-self: flex-end; overflow: hidden; padding: 0; }
+        .msg-avatar { width: 32px; height: 32px; border-radius: 50%; background: linear-gradient(135deg, #a78bfa, #8b5cf6); display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; color: white; flex-shrink: 0; align-self: flex-end; overflow: hidden; padding: 0; }
         .msg-row.mine .msg-avatar { background: linear-gradient(135deg, #6366f1, #8b5cf6); }
+        .msg-avatar-spacer { width: 32px; flex-shrink: 0; }
 
-        .msg-content { display: flex; flex-direction: column; gap: 2px; }
+        .msg-content { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
         .msg-row.mine .msg-content { align-items: flex-end; }
         .msg-row.theirs .msg-content { align-items: flex-start; }
-        .msg-sender { font-size: 10px; color: rgba(255,255,255,0.4); padding: 0 3px; }
+        .msg-sender { font-size: 11px; color: #818cf8; font-weight: 600; letter-spacing: 0.04em; margin-bottom: 4px; padding: 0 3px; }
 
-        .msg-bubble { padding: 9px 13px; border-radius: 15px; font-size: 13px; line-height: 1.5; word-break: break-word; max-width: 100%; transition: transform 0.15s ease; }
-        .msg-row.mine .msg-bubble { background: linear-gradient(135deg, #6366f1, #8b5cf6); color: white; border-bottom-right-radius: 3px; box-shadow: 0 3px 12px rgba(99,102,241,0.28); }
-        .msg-row.theirs .msg-bubble { background: rgba(255,255,255,0.08); backdrop-filter: blur(6px); color: rgba(255,255,255,0.9); border: 1px solid rgba(255,255,255,0.07); border-bottom-left-radius: 3px; }
+        .msg-bubble-wrap { position: relative; max-width: 100%; }
+        .msg-bubble { padding: 10px 14px; font-size: 14px; line-height: 1.5; word-break: break-word; max-width: 100%; transition: transform 0.15s ease; }
+        .msg-row.mine .msg-bubble { background: linear-gradient(135deg, #5b5fc7 0%, #7c3aed 100%); color: #ffffff; border-radius: 18px 4px 18px 18px; box-shadow: 0 4px 16px rgba(99,102,241,0.35); }
+        .msg-row.theirs .msg-bubble { background: rgba(255,255,255,0.07); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); color: #e2e8f0; border: 1px solid rgba(255,255,255,0.09); border-radius: 4px 18px 18px 18px; box-shadow: 0 2px 8px rgba(0,0,0,0.3); }
+        .msg-row:hover .msg-bubble { transform: scale(1.008); }
 
-        .msg-footer { display: flex; align-items: center; gap: 5px; padding: 0 3px; }
-        .msg-time { font-size: 9px; color: rgba(255,255,255,0.28); }
+        .msg-footer { display: flex; align-items: center; gap: 5px; padding: 0 3px; margin-top: 3px; }
+        .msg-row.theirs .msg-footer { color: #475569; }
+        .msg-row.mine .msg-footer { color: rgba(99,102,241,0.7); }
+        .msg-time { font-size: 11px; color: inherit; }
         .edited-tag { font-size: 9px; color: rgba(255,255,255,0.28); font-style: italic; }
-        .seen-status { font-size: 10px; color: rgba(99,102,241,0.8); font-weight: 600; }
+        .seen-status { font-size: 10px; color: #818cf8; font-weight: 600; }
         .seen-status.delivered { color: rgba(255,255,255,0.28); }
         .msg-pin-indicator { font-size: 10px; color: rgba(255,215,0,0.5); }
 
-        .msg-actions { display: flex; gap: 4px; margin-top: 2px; opacity: 0; transition: opacity 0.15s; }
-        .msg-row:hover .msg-actions { opacity: 1; }
-        .action-btn { background: rgba(255,255,255,0.09); border: 1px solid rgba(255,255,255,0.13); color: rgba(255,255,255,0.65); padding: 2px 7px; border-radius: 6px; font-size: 10px; cursor: pointer; transition: all 0.15s; }
-        .action-btn:hover { background: rgba(255,255,255,0.18); color: white; }
-        .action-btn.delete:hover { background: rgba(239,68,68,0.25); color: #ef4444; }
+        .msg-actions { display: flex; gap: 2px; align-items: center; position: absolute; top: 0; transform: translateY(-50%) scale(0.85); opacity: 0; pointer-events: none; transition: opacity 150ms ease, transform 150ms ease; background: #1c1c32; border: 1px solid rgba(255,255,255,0.1); border-radius: 20px; padding: 4px 6px; box-shadow: 0 4px 16px rgba(0,0,0,0.5); z-index: 5; }
+        .msg-row.theirs .msg-actions { right: -6px; }
+        .msg-row.mine .msg-actions { left: -6px; }
+        .msg-row:hover .msg-actions { opacity: 1; pointer-events: auto; transform: translateY(-50%) scale(1); }
+        .action-btn { background: none; border: none; color: #64748b; width: 28px; height: 28px; border-radius: 50%; font-size: 13px; cursor: pointer; transition: all 0.15s; display: flex; align-items: center; justify-content: center; }
+        .action-btn:hover { background: rgba(255,255,255,0.08); color: #f1f5f9; }
+        .action-btn.delete:hover { background: rgba(239,68,68,0.2); color: #ef4444; }
         .action-btn.pinned { color: rgba(255,215,0,0.7); }
 
-        .reactions-bar { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 3px; }
+        .reactions-bar { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 4px; }
         .reaction-btn { background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.11); border-radius: 20px; padding: 1px 6px; font-size: 11px; cursor: pointer; transition: all 0.15s; color: white; display: flex; align-items: center; gap: 3px; }
         .reaction-btn:hover { background: rgba(255,255,255,0.16); transform: scale(1.08); }
         .reaction-btn.reacted { background: rgba(99,102,241,0.22); border-color: rgba(99,102,241,0.45); }
         .reaction-count { font-size: 10px; color: rgba(255,255,255,0.65); }
 
-        .reaction-picker { display: flex; gap: 3px; margin-top: 3px; background: rgba(25,25,55,0.96); border: 1px solid rgba(255,255,255,0.09); border-radius: 20px; padding: 3px 7px; }
+        .reaction-picker { display: none; }
+        .msg-row:hover .reaction-picker { display: flex; }
+        .reaction-picker { gap: 3px; margin-top: 4px; background: #1c1c32; border: 1px solid rgba(255,255,255,0.1); border-radius: 20px; padding: 3px 7px; width: fit-content; }
         .reaction-pick-btn { background: none; border: none; font-size: 15px; cursor: pointer; transition: transform 0.15s; padding: 1px; }
         .reaction-pick-btn:hover { transform: scale(1.3); }
 
@@ -1204,7 +1268,7 @@ function Chat({ username, onLogout }) {
         .empty-sub { font-size: 12px; color: rgba(255,255,255,0.22); }
         .empty-hint { font-size: 11px; color: rgba(99,102,241,0.55); background: rgba(99,102,241,0.09); border: 1px solid rgba(99,102,241,0.18); padding: 6px 13px; border-radius: 20px; animation: pulse 3s ease-in-out infinite; }
 
-        .input-area { padding: 12px 22px 14px; background: rgba(255,255,255,0.05); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border-top: 1px solid rgba(255,255,255,0.07); position: relative; }
+        .input-area { padding: 12px 16px; background: rgba(13,13,26,0.95); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border-top: 1px solid rgba(255,255,255,0.06); position: relative; }
 
         .image-preview-bar { padding: 7px 9px; background: rgba(99,102,241,0.09); border: 1px solid rgba(99,102,241,0.18); border-radius: 9px; margin-bottom: 7px; display: flex; align-items: center; gap: 9px; }
         .preview-img { width: 48px; height: 48px; object-fit: cover; border-radius: 7px; }
@@ -1214,7 +1278,7 @@ function Chat({ username, onLogout }) {
         .upload-progress { font-size: 10px; color: rgba(99,102,241,0.75); animation: pulse 1s ease-in-out infinite; }
         .preview-cancel { background: none; border: none; color: rgba(255,255,255,0.35); font-size: 15px; cursor: pointer; }
 
-        .emoji-picker-popup { position: absolute; bottom: 68px; left: 22px; background: rgba(12,12,32,0.98); border: 1px solid rgba(255,255,255,0.11); border-radius: 13px; padding: 12px; z-index: 999; width: 290px; box-shadow: 0 18px 55px rgba(0,0,0,0.65); animation: slideDown 0.18s ease; }
+        .emoji-picker-popup { position: absolute; bottom: 68px; left: 16px; background: rgba(12,12,32,0.98); border: 1px solid rgba(255,255,255,0.11); border-radius: 13px; padding: 12px; z-index: 999; width: 290px; box-shadow: 0 18px 55px rgba(0,0,0,0.65); animation: slideDown 0.18s ease; }
         .emoji-picker-title { font-size: 10px; font-weight: 700; color: rgba(255,255,255,0.35); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 7px; }
         .emoji-grid { display: grid; grid-template-columns: repeat(10, 1fr); gap: 2px; max-height: 165px; overflow-y: auto; }
         .emoji-grid::-webkit-scrollbar { width: 3px; }
@@ -1222,27 +1286,51 @@ function Chat({ username, onLogout }) {
         .emoji-item { background: none; border: none; font-size: 17px; cursor: pointer; padding: 3px; border-radius: 5px; transition: all 0.12s; display: flex; align-items: center; justify-content: center; }
         .emoji-item:hover { background: rgba(255,255,255,0.09); transform: scale(1.25); }
 
-        .input-row { display: flex; gap: 8px; align-items: center; background: rgba(255,255,255,0.055); border: 1.5px solid rgba(255,255,255,0.09); border-radius: 13px; padding: 4px 4px 4px 12px; transition: all 0.28s; }
-        .input-row:focus-within { border-color: #6366f1; background: rgba(99,102,241,0.07); box-shadow: 0 0 0 3px rgba(99,102,241,0.1); }
+        .input-row { display: flex; gap: 8px; align-items: center; background: #111120; border: 1px solid rgba(255,255,255,0.08); border-radius: 14px; padding: 8px 8px 8px 14px; transition: border-color 200ms, box-shadow 200ms; }
+        .input-row:focus-within { border-color: rgba(99,102,241,0.5); box-shadow: 0 0 0 3px rgba(99,102,241,0.1); }
 
-        .emoji-btn { background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.11); color: white; width: 32px; height: 32px; border-radius: 9px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 16px; transition: all 0.2s; flex-shrink: 0; }
-        .emoji-btn:hover { background: rgba(255,255,255,0.13); animation: wobble 0.4s ease; }
-        .emoji-btn.active { background: rgba(99,102,241,0.28); border-color: #6366f1; }
+        .emoji-btn { background: none; border: none; color: #475569; width: 32px; height: 32px; border-radius: 9px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 16px; transition: all 0.2s; flex-shrink: 0; }
+        .emoji-btn:hover { color: #818cf8; background: rgba(255,255,255,0.06); animation: wobble 0.4s ease; }
+        .emoji-btn.active { background: rgba(99,102,241,0.28); color: #818cf8; }
 
-        .img-upload-btn { background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.11); color: white; width: 32px; height: 32px; border-radius: 9px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 16px; transition: all 0.2s; flex-shrink: 0; }
-        .img-upload-btn:hover { background: rgba(255,255,255,0.13); animation: iconBounce 0.4s ease; }
+        .img-upload-btn { background: none; border: none; color: #475569; width: 32px; height: 32px; border-radius: 9px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 16px; transition: all 0.2s; flex-shrink: 0; }
+        .img-upload-btn:hover { color: #818cf8; background: rgba(255,255,255,0.06); animation: iconBounce 0.4s ease; }
 
-        .msg-input { flex: 1; background: transparent; border: none; color: white; font-size: 13px; outline: none; padding: 6px 0; }
-        .msg-input::placeholder { color: rgba(255,255,255,0.28); }
+        .msg-input { flex: 1; background: transparent; border: none; color: #f1f5f9; font-size: 14px; outline: none; padding: 6px 0; resize: none; }
+        .msg-input::placeholder { color: #334155; }
         .msg-input:disabled { opacity: 0.45; cursor: not-allowed; }
 
-        .send-btn { width: 36px; height: 36px; background: linear-gradient(135deg, #6366f1, #8b5cf6); border: none; border-radius: 10px; color: white; font-size: 16px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s; flex-shrink: 0; }
-        .send-btn:hover { transform: scale(1.1) rotate(15deg); box-shadow: 0 4px 16px rgba(99,102,241,0.6); }
-        .send-btn:active { transform: scale(0.95); }
+        .send-btn { width: 38px; height: 38px; background: linear-gradient(135deg, #6366f1, #8b5cf6); border: none; border-radius: 10px; color: white; font-size: 16px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 200ms cubic-bezier(0.34, 1.56, 0.64, 1); flex-shrink: 0; }
+        .send-btn:hover { transform: scale(1.08); box-shadow: 0 4px 16px rgba(99,102,241,0.5); }
+        .send-btn:active { transform: scale(0.94); }
+        .send-btn.pulsing { animation: sendFlash 300ms ease; }
         .send-btn:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
 
-        .msg-image { max-width: 240px; max-height: 170px; border-radius: 9px; cursor: pointer; display: block; }
-        .msg-image:hover { opacity: 0.88; }
+        .msg-image-wrap { position: relative; max-width: 260px; max-height: 320px; overflow: hidden; cursor: pointer; display: block; line-height: 0; }
+        .msg-image { width: 100%; max-width: 260px; max-height: 320px; object-fit: cover; display: block; border-radius: inherit; }
+        .msg-image-wrap::after {
+          content: '🔍';
+          position: absolute; inset: 0;
+          display: flex; align-items: center; justify-content: center;
+          font-size: 24px; color: white;
+          background: rgba(0,0,0,0.35);
+          opacity: 0; transition: opacity 200ms ease;
+        }
+        .msg-image-wrap:hover::after { opacity: 1; }
+        .msg-row.mine .msg-bubble:has(.msg-image-wrap) { padding: 0; overflow: hidden; }
+        .msg-row.theirs .msg-bubble:has(.msg-image-wrap) { padding: 0; overflow: hidden; }
+
+        .lightbox-overlay {
+          position: fixed; inset: 0; z-index: 999999;
+          background: rgba(0,0,0,0.88);
+          display: flex; align-items: center; justify-content: center;
+          animation: lightboxFadeIn 200ms ease;
+          cursor: zoom-out;
+          padding: 24px;
+        }
+        .lightbox-img { max-width: 92vw; max-height: 92vh; border-radius: 8px; animation: lightboxZoomIn 200ms ease; box-shadow: 0 20px 60px rgba(0,0,0,0.6); cursor: default; }
+        .lightbox-close { position: absolute; top: 20px; right: 24px; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); color: white; width: 38px; height: 38px; border-radius: 50%; font-size: 18px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+        .lightbox-close:hover { background: rgba(255,255,255,0.2); }
 
         .file-msg { display: flex; align-items: center; gap: 9px; background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.13); border-radius: 9px; padding: 9px 13px; cursor: pointer; transition: all 0.18s; min-width: 170px; }
         .file-msg:hover { background: rgba(255,255,255,0.13); }
@@ -1309,17 +1397,17 @@ function Chat({ username, onLogout }) {
           .icon-btn { width: 30px !important; height: 30px !important; font-size: 14px !important; }
 
           .chat-header { padding: 12px 14px !important; gap: 10px !important; }
-          .chat-header-avatar { width: 30px !important; height: 30px !important; font-size: 14px !important; border-radius: 8px !important; }
+          .chat-header-avatar { width: 34px !important; height: 34px !important; font-size: 14px !important; border-radius: 8px !important; }
           .chat-header-name { font-size: 14px !important; }
           .chat-header-status { font-size: 10px !important; }
           .msg-count { display: none !important; }
           .header-btn { width: 28px !important; height: 28px !important; font-size: 13px !important; }
 
-          .messages-area { padding: 10px !important; gap: 8px !important; }
-          .msg-row { max-width: 85% !important; }
+          .messages-area { padding: 10px !important; }
+          .msg-row, .msg-row.mine, .msg-row.theirs { max-width: 85% !important; }
           .msg-bubble { font-size: 13px !important; padding: 8px 12px !important; }
-          .msg-image { max-width: 200px !important; }
-          .msg-avatar { width: 26px !important; height: 26px !important; font-size: 10px !important; }
+          .msg-image, .msg-image-wrap { max-width: 200px !important; }
+          .msg-avatar, .msg-avatar-spacer { width: 26px !important; height: 26px !important; font-size: 10px !important; }
 
           .input-area { padding: 8px 10px 10px !important; }
           .input-row { padding: 3px 3px 3px 10px !important; gap: 6px !important; }
@@ -1372,6 +1460,13 @@ function Chat({ username, onLogout }) {
           <span className="drag-overlay-icon">📸</span>
           <div className="drag-overlay-text">Drop to send</div>
           <div className="drag-overlay-sub">Images, PDFs, Docs, ZIP</div>
+        </div>
+      )}
+
+      {lightboxImage && (
+        <div className="lightbox-overlay" onClick={() => setLightboxImage(null)}>
+          <button className="lightbox-close" onClick={() => setLightboxImage(null)}>✕</button>
+          <img src={lightboxImage} alt="" className="lightbox-img" onClick={(e) => e.stopPropagation()} />
         </div>
       )}
 
@@ -1618,7 +1713,7 @@ function Chat({ username, onLogout }) {
                     {activeRoom === 'general' ? '# general' : `💬 ${activeDMUser}`}
                   </div>
                   <div className="chat-header-status">
-                    <span className="status-dot" style={{ background: isConnected ? '#10b981' : '#ef4444', boxShadow: isConnected ? '0 0 5px #10b981' : '0 0 5px #ef4444' }}></span>
+                    <span className="status-dot" style={{ background: isConnected ? '#10b981' : '#ef4444' }}></span>
                     {isConnected ? (activeRoom === 'general' ? 'Group Chat — Everyone online' : `Private chat`) : 'Connecting...'}
                   </div>
                 </div>
@@ -1712,6 +1807,12 @@ function Chat({ username, onLogout }) {
                     const msgIndexInAll = userMsgs.findIndex(m => m._id === msg._id);
                     const isLastMine = isMine && msgIndexInAll === userMsgs.length - 1;
 
+                    // ===== Grouping (presentational only) =====
+                    const groupedWithPrev = isGroupedWithPrev(filteredMessages, index);
+                    const groupedWithNext = isGroupedWithNext(filteredMessages, index);
+                    const isFirstInGroup = !groupedWithPrev;
+                    const isLastInGroup = !groupedWithNext;
+
                     return (
                       <React.Fragment key={msg._id || index}>
                         {showDate && msg.timestamp && (
@@ -1721,14 +1822,18 @@ function Chat({ username, onLogout }) {
                             <div className="date-separator-line"></div>
                           </div>
                         )}
-                        <div className={`msg-row ${isMine ? 'mine' : 'theirs'}`}>
-                          <div className="msg-avatar" style={{ padding: 0, overflow: 'hidden' }}>
-                            {isMine && profile.avatar_url
-                              ? <img src={profile.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
-                              : getInitial(msg.username)}
-                          </div>
+                        <div className={`msg-row ${isMine ? 'mine' : 'theirs'} ${groupedWithPrev ? 'grouped' : ''}`}>
+                          {isLastInGroup ? (
+                            <div className="msg-avatar" style={{ padding: 0, overflow: 'hidden' }}>
+                              {isMine && profile.avatar_url
+                                ? <img src={profile.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
+                                : getInitial(msg.username)}
+                            </div>
+                          ) : (
+                            <div className="msg-avatar-spacer"></div>
+                          )}
                           <div className="msg-content">
-                            {!isMine && <span className="msg-sender">{msg.username}</span>}
+                            {!isMine && isFirstInGroup && <span className="msg-sender">{msg.username}</span>}
                             {isEditing ? (
                               <>
                                 <input className="edit-input" value={editText}
@@ -1741,57 +1846,83 @@ function Chat({ username, onLogout }) {
                               </>
                             ) : (
                               <>
-                                <div className="msg-bubble">
-                                  {msg.reply_to && (
-                                    <div className="msg-reply-preview">
-                                      <div className="msg-reply-name">↩️ {msg.reply_to.username}</div>
-                                      <div className="msg-reply-text">
-                                        {msg.reply_to.text?.startsWith('__IMAGE__') ? '🖼️ Image' : msg.reply_to.text?.startsWith('__FILE__') ? '📎 File' : msg.reply_to.text}
-                                      </div>
-                                    </div>
-                                  )}
-                                  {msg.text?.startsWith('__IMAGE__') ? (() => {
-                                    const parts = msg.text.replace('__IMAGE__', '').split('__CAPTION__');
-                                    return (
-                                      <div>
-                                        <img src={parts[0]} alt="" className="msg-image" onClick={() => window.open(parts[0], '_blank')} />
-                                        {parts[1] && <p style={{ marginTop: '6px', fontSize: '12px', color: 'inherit' }}>{parts[1]}</p>}
-                                      </div>
-                                    );
-                                  })() : msg.text?.startsWith('__FILE__') ? (() => {
-                                    const withoutPrefix = msg.text.replace('__FILE__', '');
-                                    const urlPart = withoutPrefix.split('__FILENAME__')[0];
-                                    const rest = withoutPrefix.split('__FILENAME__')[1] || '';
-                                    const filenamePart = rest.split('__FILEICON__')[0];
-                                    const iconAndCaption = rest.split('__FILEICON__')[1] || '';
-                                    const icon = iconAndCaption.split('__CAPTION__')[0];
-                                    const caption = iconAndCaption.split('__CAPTION__')[1];
-                                    return (
-                                      <div>
-                                        <div className="file-msg" onClick={() => window.open(urlPart, '_blank')}>
-                                          <span className="file-msg-icon">{icon || '📎'}</span>
-                                          <div className="file-msg-info">
-                                            <div className="file-msg-name">{filenamePart}</div>
-                                            <div className="file-msg-action">Tap to open ↗️</div>
-                                          </div>
+                                <div className="msg-bubble-wrap">
+                                  <div className="msg-bubble">
+                                    {msg.reply_to && (
+                                      <div className="msg-reply-preview">
+                                        <div className="msg-reply-name">↩️ {msg.reply_to.username}</div>
+                                        <div className="msg-reply-text">
+                                          {msg.reply_to.text?.startsWith('__IMAGE__') ? '🖼️ Image' : msg.reply_to.text?.startsWith('__FILE__') ? '📎 File' : msg.reply_to.text}
                                         </div>
-                                        {caption && <p style={{ marginTop: '6px', fontSize: '12px', color: 'inherit' }}>{caption}</p>}
                                       </div>
-                                    );
-                                  })() : searchQuery ? (
-                                    msg.text?.split(new RegExp(`(${searchQuery})`, 'gi')).map((part, i) =>
-                                      part.toLowerCase() === searchQuery.toLowerCase()
-                                        ? <span key={i} className="search-highlight">{part}</span>
-                                        : part
-                                    )
-                                  ) : msg.text}
+                                    )}
+                                    {msg.text?.startsWith('__IMAGE__') ? (() => {
+                                      const parts = msg.text.replace('__IMAGE__', '').split('__CAPTION__');
+                                      return (
+                                        <div>
+                                          <div className="msg-image-wrap" onClick={() => setLightboxImage(parts[0])}>
+                                            <img src={parts[0]} alt="" className="msg-image" />
+                                          </div>
+                                          {parts[1] && <p style={{ margin: '6px 10px', fontSize: '12px', color: 'inherit' }}>{parts[1]}</p>}
+                                        </div>
+                                      );
+                                    })() : msg.text?.startsWith('__FILE__') ? (() => {
+                                      const withoutPrefix = msg.text.replace('__FILE__', '');
+                                      const urlPart = withoutPrefix.split('__FILENAME__')[0];
+                                      const rest = withoutPrefix.split('__FILENAME__')[1] || '';
+                                      const filenamePart = rest.split('__FILEICON__')[0];
+                                      const iconAndCaption = rest.split('__FILEICON__')[1] || '';
+                                      const icon = iconAndCaption.split('__CAPTION__')[0];
+                                      const caption = iconAndCaption.split('__CAPTION__')[1];
+                                      return (
+                                        <div>
+                                          <div className="file-msg" onClick={() => window.open(urlPart, '_blank')}>
+                                            <span className="file-msg-icon">{icon || '📎'}</span>
+                                            <div className="file-msg-info">
+                                              <div className="file-msg-name">{filenamePart}</div>
+                                              <div className="file-msg-action">Tap to open ↗️</div>
+                                            </div>
+                                          </div>
+                                          {caption && <p style={{ marginTop: '6px', fontSize: '12px', color: 'inherit' }}>{caption}</p>}
+                                        </div>
+                                      );
+                                    })() : searchQuery ? (
+                                      msg.text?.split(new RegExp(`(${searchQuery})`, 'gi')).map((part, i) =>
+                                        part.toLowerCase() === searchQuery.toLowerCase()
+                                          ? <span key={i} className="search-highlight">{part}</span>
+                                          : part
+                                      )
+                                    ) : msg.text}
+                                  </div>
+
+                                  <div className="msg-actions">
+                                    <button className="action-btn" title="React"
+                                      onClick={() => addReaction(msg._id, REACTIONS[0])}>😄</button>
+                                    <button className="action-btn"
+                                      onClick={() => { setReplyingTo(msg); document.querySelector('.msg-input')?.focus(); }} title="Reply">↩</button>
+                                    {isMine && (
+                                      <>
+                                        <button className="action-btn" onClick={() => startEdit(msg)} title="Edit">✏️</button>
+                                        <button className="action-btn delete" onClick={() => deleteMessage(msg._id)} title="Delete">🗑️</button>
+                                      </>
+                                    )}
+                                    {activeRoom === 'general' && (
+                                      <button className={`action-btn ${isPinned(msg._id) ? 'pinned' : ''}`}
+                                        onClick={() => isPinned(msg._id) ? unpinMessage(msg._id) : pinMessage(msg)} title="Pin">
+                                        {isPinned(msg._id) ? '📌' : '📍'}
+                                      </button>
+                                    )}
+                                    <button className="action-btn" title="More">⋯</button>
+                                  </div>
+
+                                  <div className="reaction-picker">
+                                    {REACTIONS.map(emoji => (
+                                      <button key={emoji} className="reaction-pick-btn"
+                                        onClick={() => addReaction(msg._id, emoji)}>{emoji}</button>
+                                    ))}
+                                  </div>
                                 </div>
-                                <div className="msg-footer">
-                                  <span className="msg-time">{formatTime(msg.timestamp)}</span>
-                                  {msg.edited && <span className="edited-tag">(edited)</span>}
-                                  {isMine && <span className={`seen-status ${isLastMine ? '' : 'delivered'}`}>{isLastMine ? '✓✓' : '✓'}</span>}
-                                  {isPinned(msg._id) && <span className="msg-pin-indicator">📌</span>}
-                                </div>
+
                                 {Object.keys(reactions).length > 0 && (
                                   <div className="reactions-bar">
                                     {Object.entries(reactions).map(([emoji, users]) =>
@@ -1804,28 +1935,15 @@ function Chat({ username, onLogout }) {
                                     )}
                                   </div>
                                 )}
-                                <div className="msg-actions">
-                                  <div className="reaction-picker">
-                                    {REACTIONS.map(emoji => (
-                                      <button key={emoji} className="reaction-pick-btn"
-                                        onClick={() => addReaction(msg._id, emoji)}>{emoji}</button>
-                                    ))}
+
+                                {isLastInGroup && (
+                                  <div className="msg-footer">
+                                    <span className="msg-time">{formatTime(msg.timestamp)}</span>
+                                    {msg.edited && <span className="edited-tag">(edited)</span>}
+                                    {isMine && <span className={`seen-status ${isLastMine ? '' : 'delivered'}`}>{isLastMine ? '✓✓' : '✓'}</span>}
+                                    {isPinned(msg._id) && <span className="msg-pin-indicator">📌</span>}
                                   </div>
-                                  <button className="action-btn"
-                                    onClick={() => { setReplyingTo(msg); document.querySelector('.msg-input')?.focus(); }}>↩️</button>
-                                  {isMine && (
-                                    <>
-                                      <button className="action-btn" onClick={() => startEdit(msg)}>✏️</button>
-                                      <button className="action-btn delete" onClick={() => deleteMessage(msg._id)}>🗑️</button>
-                                    </>
-                                  )}
-                                  {activeRoom === 'general' && (
-                                    <button className={`action-btn ${isPinned(msg._id) ? 'pinned' : ''}`}
-                                      onClick={() => isPinned(msg._id) ? unpinMessage(msg._id) : pinMessage(msg)}>
-                                      {isPinned(msg._id) ? '📌' : '📍'}
-                                    </button>
-                                  )}
-                                </div>
+                                )}
                               </>
                             )}
                           </div>
@@ -1897,7 +2015,7 @@ function Chat({ username, onLogout }) {
                     className="msg-input" type="text"
                     placeholder={!isConnected ? '⚠️ Reconnecting...' : imageFile ? 'Add a caption...' : activeRoom === 'general' ? 'Message #general...' : `Message ${activeDMUser}...`}
                     value={input} onChange={handleInputChange} disabled={!isConnected} />
-                  <button type="submit" className="send-btn ripple-btn" disabled={uploading || !isConnected}>
+                  <button type="submit" className={`send-btn ripple-btn ${sendPulse ? 'pulsing' : ''}`} disabled={uploading || !isConnected}>
                     {uploading ? '⏳' : !isConnected ? '⚡' : '➤'}
                   </button>
                 </form>
