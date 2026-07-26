@@ -1753,7 +1753,7 @@ function Chat({ username, onLogout }) {
           .profile-overlay { align-items: flex-end !important; }
           .profile-modal {
             width: 100vw !important; max-width: 100vw !important;
-            padding: 14px 16px 22px !important;
+            max-height: 92vh !important;
             border-radius: 20px 20px 0 0 !important;
             animation: bottomSheetIn 0.3s cubic-bezier(0.16,1,0.3,1) !important;
             position: relative;
@@ -1761,11 +1761,15 @@ function Chat({ username, onLogout }) {
           .profile-modal::before {
             content: '';
             display: block;
-            width: 40px; height: 4px;
-            background: rgba(255,255,255,0.25);
-            border-radius: 3px;
-            margin: 0 auto 12px;
+            width: 32px; height: 4px;
+            background: rgba(255,255,255,0.2);
+            border-radius: 2px;
+            margin: 8px auto;
           }
+          .pm-body { grid-template-columns: 1fr !important; padding: 16px !important; }
+          .pm-left-panel { flex-direction: row !important; align-items: center !important; padding: 14px !important; }
+          .pm-color-grid { margin-left: auto; }
+          .pm-edit-label { display: none; }
           .online-dot { width: 9px !important; height: 9px !important; }
 
           .send-btn { min-width: 44px !important; min-height: 44px !important; }
@@ -1834,55 +1838,116 @@ function Chat({ username, onLogout }) {
       {showProfile && (
         <div className="profile-overlay" onClick={(e) => e.target === e.currentTarget && setShowProfile(false)}>
           <div className="profile-modal">
-            <div className="profile-modal-header">
-              <div className="profile-modal-title">⚙️ Profile Settings</div>
-              <button className="profile-close-btn" onClick={() => setShowProfile(false)}>✕</button>
-            </div>
-            <div className="profile-avatar-section">
-              <div className="profile-avatar-preview"
-                style={{ background: profileEdit.avatar_color, cursor: 'pointer', position: 'relative', overflow: 'hidden' }}
-                onClick={() => document.getElementById('avatar-upload').click()}>
-                {profileEdit.avatar_url
-                  ? <img src={profileEdit.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
-                  : getInitial(username)}
-                <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'rgba(0,0,0,0.5)', fontSize: '9px', color: 'white', textAlign: 'center', padding: '3px' }}>📷 Edit</div>
+            <div className="pm-header">
+              <div className="pm-header-left">
+                <span className="pm-header-icon">⚙️</span>
+                <span>Profile Settings</span>
               </div>
-              <input id="avatar-upload" type="file" accept="image/*" style={{ display: 'none' }} onChange={async (e) => {
-                const file = e.target.files[0];
-                if (!file) return;
-                try { const url = await uploadToCloudinary(file); setProfileEdit(prev => ({ ...prev, avatar_url: url })); } catch (err) {}
-              }} />
-              <div className="avatar-colors">
-                {AVATAR_COLORS.map(color => (
-                  <div key={color} className={`avatar-color-btn ${profileEdit.avatar_color === color ? 'selected' : ''}`}
-                    style={{ background: color }} onClick={() => setProfileEdit(prev => ({ ...prev, avatar_color: color }))} />
-                ))}
+              <button className="pm-close-btn" onClick={() => setShowProfile(false)}>×</button>
+            </div>
+
+            <div className="pm-body">
+              <div className="pm-left-panel">
+                <div className="pm-avatar-wrap"
+                  style={{ background: profileEdit.avatar_color }}
+                  onClick={() => document.getElementById('avatar-upload').click()}>
+                  {profileEdit.avatar_url
+                    ? <img src={profileEdit.avatar_url} alt="" />
+                    : getInitial(username)}
+                </div>
+                <div className="pm-edit-label" onClick={() => document.getElementById('avatar-upload').click()}>Edit Photo</div>
+                <input id="avatar-upload" type="file" accept="image/*" style={{ display: 'none' }} onChange={handleAvatarFileSelect} />
+
+                <div className="pm-divider" />
+                <div className="pm-color-label">AVATAR COLOR</div>
+                <div className="pm-color-grid">
+                  {AVATAR_COLORS.map(color => (
+                    <button key={color} type="button" className={`pm-color-btn ${profileEdit.avatar_color === color ? 'selected' : ''}`}
+                      style={{ background: color, color }} onClick={() => setProfileEdit(prev => ({ ...prev, avatar_color: color }))} />
+                  ))}
+                </div>
+              </div>
+
+              <div className="pm-right-panel">
+                <div className="pm-section-label">IDENTITY</div>
+                <label className="pm-field-label">Username</label>
+                <input className="pm-input" value={username} disabled />
+                <label className="pm-field-label">Bio / Status</label>
+                <input className="pm-input" placeholder="Tell something about yourself..."
+                  value={profileEdit.bio} onChange={(e) => setProfileEdit(prev => ({ ...prev, bio: e.target.value }))} maxLength={100} />
+
+                <div className="pm-spacer" />
+
+                <div className="pm-section-label">SECURITY</div>
+                <label className="pm-field-label">Current Password</label>
+                <input className="pm-input" type="password" placeholder="Enter current password"
+                  value={profileEdit.current_password} onChange={(e) => setProfileEdit(prev => ({ ...prev, current_password: e.target.value }))} />
+                <label className="pm-field-label">New Password</label>
+                <input className="pm-input" type="password" placeholder="Enter new password"
+                  value={profileEdit.new_password} onChange={(e) => setProfileEdit(prev => ({ ...prev, new_password: e.target.value }))} />
               </div>
             </div>
-            <div className="profile-field">
-              <label className="profile-label">Username</label>
-              <input className="profile-input" value={username} disabled style={{ opacity: 0.45 }} />
+
+            <div className="pm-footer">
+              <span className="pm-footer-note">Changes save to your account</span>
+              <button className="pm-save-btn" onClick={saveProfile} disabled={profileSaving}>
+                {profileSaving ? '⏳ Saving...' : '💾 Save Changes'}
+              </button>
             </div>
-            <div className="profile-field">
-              <label className="profile-label">Bio / Status</label>
-              <input className="profile-input" placeholder="Tell something about yourself..."
-                value={profileEdit.bio} onChange={(e) => setProfileEdit(prev => ({ ...prev, bio: e.target.value }))} maxLength={100} />
+            {profileMsg && <div className="pm-msg">{profileMsg}</div>}
+          </div>
+        </div>
+      )}
+
+      {cropModalOpen && (
+        <div className="crop-overlay">
+          <div className="crop-card">
+            <div className="crop-title">Set Profile Photo</div>
+            <div className="crop-subtitle">Drag to reposition · Scroll to zoom</div>
+
+            <div
+              className={`crop-viewport ${cropDragging ? 'dragging' : ''}`}
+              onPointerDown={handleCropPointerDown}
+              onPointerMove={handleCropPointerMove}
+              onPointerUp={handleCropPointerUp}
+              onPointerCancel={handleCropPointerUp}
+              onWheel={handleCropWheel}
+            >
+              {cropImageSrc && (
+                <img
+                  src={cropImageSrc}
+                  alt=""
+                  onLoad={handleCropImageLoad}
+                  draggable={false}
+                  style={(() => {
+                    if (!cropNaturalSize.width || !cropNaturalSize.height) {
+                      return { transform: 'translate(-50%, -50%)', opacity: 0 };
+                    }
+                    const baseScale = Math.max(CROP_VIEWPORT / cropNaturalSize.width, CROP_VIEWPORT / cropNaturalSize.height);
+                    const scale = baseScale * cropZoom;
+                    return {
+                      width: `${cropNaturalSize.width * scale}px`,
+                      height: `${cropNaturalSize.height * scale}px`,
+                      transform: `translate(calc(-50% + ${cropPosition.x}px), calc(-50% + ${cropPosition.y}px))`,
+                    };
+                  })()}
+                />
+              )}
             </div>
-            <div className="profile-divider" />
-            <div className="profile-field">
-              <label className="profile-label">Current Password</label>
-              <input className="profile-input" type="password" placeholder="Enter current password"
-                value={profileEdit.current_password} onChange={(e) => setProfileEdit(prev => ({ ...prev, current_password: e.target.value }))} />
+
+            <div className="crop-zoom-row">
+              <input
+                type="range" className="crop-zoom-slider"
+                min={CROP_ZOOM_MIN} max={CROP_ZOOM_MAX} step={0.1}
+                value={cropZoom} onChange={handleCropZoomSlider}
+              />
+              <span className="crop-zoom-value">{cropZoom.toFixed(1)}x</span>
             </div>
-            <div className="profile-field">
-              <label className="profile-label">New Password</label>
-              <input className="profile-input" type="password" placeholder="Enter new password"
-                value={profileEdit.new_password} onChange={(e) => setProfileEdit(prev => ({ ...prev, new_password: e.target.value }))} />
+
+            <div className="crop-actions">
+              <button className="crop-cancel-btn" onClick={cancelCrop}>Cancel</button>
+              <button className="crop-apply-btn" onClick={applyCropPhoto} disabled={!cropNaturalSize.width}>Apply Photo</button>
             </div>
-            <button className="profile-save-btn" onClick={saveProfile} disabled={profileSaving}>
-              {profileSaving ? '⏳ Saving...' : '💾 Save Changes'}
-            </button>
-            {profileMsg && <div className="profile-msg">{profileMsg}</div>}
           </div>
         </div>
       )}
@@ -1918,7 +1983,19 @@ function Chat({ username, onLogout }) {
             </div>
           </div>
 
-          <div className="sidebar-section-title">Channels</div>
+          <div className="sidebar-search-wrap">
+            <span className="sidebar-search-icon">🔍</span>
+            <input
+              className="sidebar-search-input"
+              placeholder="Search"
+              value={sidebarSearchQuery}
+              onChange={(e) => setSidebarSearchQuery(e.target.value)}
+            />
+          </div>
+
+          <div className="sidebar-section-title">
+            <span>Channels</span>
+          </div>
           <div className={`channel-item ${activeRoom === 'general' ? 'active' : ''}`}
             onClick={() => { setActiveRoom('general'); setActiveDMUser(null); setUnreadCount(0); }}>
             <span className="channel-icon">🌐</span>
@@ -1932,13 +2009,15 @@ function Chat({ username, onLogout }) {
           </div>
 
           <div className="sidebar-section-title">
-            Direct Messages
-            {totalUnreadDMs > 0 && (
-              <span style={{ background: '#ef4444', color: 'white', fontSize: '9px', padding: '1px 5px', borderRadius: '9px' }}>{totalUnreadDMs}</span>
-            )}
+            <span>
+              Direct Messages
+              {totalUnreadDMs > 0 && (
+                <span style={{ marginLeft: '6px', background: '#ef4444', color: 'white', fontSize: '9px', padding: '1px 5px', borderRadius: '9px' }}>{totalUnreadDMs}</span>
+              )}
+            </span>
           </div>
 
-          {sortedUsers.map(user => {
+          {displayedSidebarUsers.map(user => {
             const roomId = getDMRoomId(username, user.username);
             const unread = unreadDMs[roomId] || 0;
             const isLocked = chatLocks[roomId]?.locked;
@@ -1952,14 +2031,15 @@ function Chat({ username, onLogout }) {
                   {user.avatar_url
                     ? <img src={user.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
                     : getInitial(user.username)}
+                  <div className="online-dot-wrap"><span className="online-dot"></span></div>
                 </div>
                 <div className="dm-info">
                   <div className="dm-name-row">
                     <div className="dm-name">{user.username}</div>
-                    {lastTs > 0 && <div className="dm-time">{formatLastMsgTime(lastTs)}</div>}
+                    {lastTs > 0 && <div className={`dm-time ${unread > 0 ? 'unread' : ''}`}>{formatLastMsgTime(lastTs)}</div>}
                   </div>
                   <div className="dm-preview-row">
-                    <div className="dm-preview" style={{ color: unread > 0 ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.35)', fontWeight: unread > 0 ? '600' : '400' }}>
+                    <div className="dm-preview">
                       {lastPreview || 'Click to chat'}
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
