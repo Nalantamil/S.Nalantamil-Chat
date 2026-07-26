@@ -34,7 +34,7 @@ const EMOJI_LIST = [
   '🔥','⭐','✨','💫','🎉','🎊','🎈','🎁','🏆','🎯',
 ];
 
-const AVATAR_COLORS = ['#6366f1','#ef4444','#10b981','#f39c12','#e91e63','#00bcd4','#9c27b0','#ff5722'];
+const AVATAR_COLORS = ['#667eea','#e74c3c','#2ecc71','#f39c12','#e91e63','#00bcd4','#9c27b0','#ff5722'];
 
 const getDMRoomId = (user1, user2) => [user1, user2].sort().join('__dm__');
 
@@ -72,8 +72,8 @@ function Chat({ username, onLogout }) {
   const [uploading, setUploading] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
-  const [profile, setProfile] = useState({ bio: '', avatar_color: '#6366f1', avatar_url: '' });
-  const [profileEdit, setProfileEdit] = useState({ bio: '', avatar_color: '#6366f1', avatar_url: '', current_password: '', new_password: '' });
+  const [profile, setProfile] = useState({ bio: '', avatar_color: '#667eea', avatar_url: '' });
+  const [profileEdit, setProfileEdit] = useState({ bio: '', avatar_color: '#667eea', avatar_url: '', current_password: '', new_password: '' });
   const [profileSaving, setProfileSaving] = useState(false);
   const [profileMsg, setProfileMsg] = useState('');
   const [replyingTo, setReplyingTo] = useState(null);
@@ -300,7 +300,7 @@ function Chat({ username, onLogout }) {
       if (profileResult.status === 'fulfilled') {
         const data = profileResult.value.data;
         setProfile(data);
-        setProfileEdit({ bio: data.bio || '', avatar_color: data.avatar_color || '#6366f1', avatar_url: data.avatar_url || '', current_password: '', new_password: '' });
+        setProfileEdit({ bio: data.bio || '', avatar_color: data.avatar_color || '#667eea', avatar_url: data.avatar_url || '', current_password: '', new_password: '' });
       }
       setAppLoading(false);
     };
@@ -404,7 +404,7 @@ function Chat({ username, onLogout }) {
     if (showProfile) {
       setProfileEdit({
         bio: profile.bio || '',
-        avatar_color: profile.avatar_color || '#6366f1',
+        avatar_color: profile.avatar_color || '#667eea',
         avatar_url: profile.avatar_url || '',
         current_password: '',
         new_password: ''
@@ -699,7 +699,7 @@ function Chat({ username, onLogout }) {
         transform: sidebarOpen ? 'translateX(0)' : 'translateX(-100%)',
         transition: 'transform 0.35s cubic-bezier(0.16,1,0.3,1), box-shadow 0.35s ease',
         boxShadow: sidebarOpen ? '12px 0 50px rgba(0,0,0,0.45)' : 'none',
-        background: '#0d0d1a',
+        background: 'rgba(10,8,25,0.98)',
         backdropFilter: 'blur(12px)',
         opacity: 1,
       }
@@ -750,8 +750,9 @@ function Chat({ username, onLogout }) {
             display: flex; flex-direction: column;
             align-items: center; justify-content: center;
             gap: 20px;
-            background: #07070f;
-            background-image: radial-gradient(circle at center, rgba(99,102,241,0.06) 0%, transparent 60%);
+            background: linear-gradient(-45deg, #07070f, #0d0d1a, #111120, #0d0d1a);
+            background-size: 400% 400%;
+            animation: gradientShift 8s ease infinite;
             font-family: 'Segoe UI', sans-serif;
             z-index: 999999;
             padding: 24px;
@@ -764,11 +765,11 @@ function Chat({ username, onLogout }) {
           }
           .app-loading-title {
             font-size: 26px; font-weight: 800;
-            background: linear-gradient(90deg, #818cf8 0%, #c4b5fd 50%, #818cf8 100%);
-            background-size: 200% auto;
+            background: linear-gradient(110deg, #6366f1 20%, #a78bfa 40%, #ffffff 50%, #a78bfa 60%, #6366f1 80%);
+            background-size: 250% 100%;
             -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
             letter-spacing: 2px;
-            animation: shimmerSweep 3s linear infinite;
+            animation: shimmerSweep 2.6s linear infinite;
           }
           .app-loading-spinner {
             width: 40px; height: 40px;
@@ -912,8 +913,8 @@ function Chat({ username, onLogout }) {
           content: '';
           position: absolute;
           top: -20%; left: -10%;
-          width: 70%; height: 70%;
-          background: radial-gradient(ellipse at 70% 30%, rgba(99,102,241,0.04) 0%, transparent 50%);
+          width: 60%; height: 60%;
+          background: radial-gradient(circle, rgba(99,102,241,0.16) 0%, rgba(99,102,241,0) 70%);
           animation: glowDrift 10s ease-in-out infinite;
           pointer-events: none;
           z-index: 0;
@@ -921,38 +922,37 @@ function Chat({ username, onLogout }) {
         .chat-header, .messages-area, .input-area, .welcome-screen { position: relative; z-index: 1; }
 
         .connection-banner { position: fixed; top: 0; left: 0; right: 0; z-index: 99999; padding: 10px 20px; display: flex; align-items: center; justify-content: center; gap: 10px; font-size: 13px; font-weight: 600; animation: slideDown 0.3s ease; }
-        .connection-banner.reconnecting { background: linear-gradient(135deg, #e67e22, #d35400); color: white; }
-        .connection-banner.connected { background: linear-gradient(135deg, #27ae60, #10b981); color: white; }
+        .connection-banner.reconnecting { background: linear-gradient(135deg, #e67e22, #b45309); color: white; }
+        .connection-banner.connected { background: linear-gradient(135deg, #10b981, #10b981); color: white; }
         .reconnect-spinner { width: 14px; height: 14px; border: 2px solid rgba(255,255,255,0.3); border-top-color: white; border-radius: 50%; animation: spin 0.8s linear infinite; flex-shrink: 0; }
         .reconnect-dot { width: 8px; height: 8px; background: white; border-radius: 50%; flex-shrink: 0; }
 
         .sidebar {
-          background: #0d0d1a;
+          background: rgba(255,255,255,0.04);
           backdrop-filter: blur(12px);
           -webkit-backdrop-filter: blur(12px);
-          border-right: 1px solid rgba(255,255,255,0.05);
+          border-right: 1px solid rgba(255,255,255,0.08);
           display: flex; flex-direction: column;
           overflow-y: auto;
           touch-action: pan-y;
           scrollbar-width: thin;
-          scrollbar-color: rgba(99,102,241,0.3) transparent;
+          scrollbar-color: rgba(99,102,241,0.4) transparent;
         }
         .sidebar::-webkit-scrollbar { width: 4px; }
         .sidebar::-webkit-scrollbar-thumb { background: transparent; border-radius: 4px; transition: background 0.2s; }
-        .sidebar:hover::-webkit-scrollbar-thumb { background: rgba(99,102,241,0.3); }
-        .sidebar::-webkit-scrollbar-thumb:hover { background: rgba(99,102,241,0.5); }
+        .sidebar:hover::-webkit-scrollbar-thumb { background: rgba(99,102,241,0.4); }
 
         .sidebar-logo { padding: 20px 20px 14px; border-bottom: 1px solid rgba(255,255,255,0.07); }
         .logo-row { display: flex; align-items: center; gap: 10px; }
         .logo-emoji { font-size: 24px; filter: drop-shadow(0 0 8px rgba(99,102,241,0.9)); cursor: pointer; transition: transform 0.3s; }
         .logo-emoji:hover { transform: scale(1.2) rotate(10deg); }
-        .logo-name { font-size: 19px; font-weight: 800; color: #818cf8; letter-spacing: 2px; }
+        .logo-name { font-size: 19px; font-weight: 800; background: linear-gradient(135deg, #6366f1, #a78bfa); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; letter-spacing: 2px; }
 
         .sidebar-section-title { padding: 14px 20px 6px; font-size: 10px; font-weight: 700; color: rgba(255,255,255,0.3); letter-spacing: 1.5px; text-transform: uppercase; display: flex; align-items: center; gap: 6px; }
 
         .channel-item { margin: 2px 10px; padding: 10px 12px; border-radius: 10px; display: flex; align-items: center; gap: 10px; cursor: pointer; transition: transform 0.2s ease, background 0.2s ease, border-color 0.2s ease; border-left: 3px solid transparent; }
-        .channel-item:hover { background: rgba(255,255,255,0.07); transform: translateX(3px); border-left-color: rgba(124,58,237,0.6); }
-        .channel-item.active { background: rgba(99,102,241,0.2); border: 1px solid rgba(99,102,241,0.25); border-left: 3px solid #7c3aed; box-shadow: -2px 0 12px rgba(124,58,237,0.25); }
+        .channel-item:hover { background: rgba(255,255,255,0.07); transform: translateX(3px); border-left-color: rgba(99,102,241,0.6); }
+        .channel-item.active { background: rgba(99,102,241,0.2); border: 1px solid rgba(99,102,241,0.25); border-left: 3px solid #6366f1; box-shadow: -2px 0 12px rgba(99,102,241,0.25); }
         .channel-icon { font-size: 16px; }
         .channel-info { flex: 1; overflow: hidden; }
         .channel-name { font-size: 13px; font-weight: 600; color: white; }
@@ -960,10 +960,10 @@ function Chat({ username, onLogout }) {
         .channel-badge { background: linear-gradient(135deg, #6366f1, #8b5cf6); color: white; font-size: 10px; font-weight: 800; min-width: 16px; height: 16px; border-radius: 8px; display: flex; align-items: center; justify-content: center; padding: 0 4px; animation: badgePulse 2s ease-in-out infinite; }
 
         .dm-item { margin: 2px 10px; padding: 10px 12px; border-radius: 10px; display: flex; align-items: center; gap: 10px; cursor: pointer; transition: transform 0.2s ease, background 0.2s ease, border-color 0.2s ease; border-left: 3px solid transparent; }
-        .dm-item:hover { background: rgba(255,255,255,0.07); transform: translateX(3px); border-left-color: rgba(124,58,237,0.6); }
-        .dm-item.active { background: rgba(99,102,241,0.2); border: 1px solid rgba(99,102,241,0.25); border-left: 3px solid #7c3aed; box-shadow: -2px 0 12px rgba(124,58,237,0.25); }
+        .dm-item:hover { background: rgba(255,255,255,0.07); transform: translateX(3px); border-left-color: rgba(99,102,241,0.6); }
+        .dm-item.active { background: rgba(99,102,241,0.2); border: 1px solid rgba(99,102,241,0.25); border-left: 3px solid #6366f1; box-shadow: -2px 0 12px rgba(99,102,241,0.25); }
 
-        .dm-avatar { width: 42px; height: 42px; border-radius: 50%; background: linear-gradient(135deg, #f093fb, #f5576c); display: flex; align-items: center; justify-content: center; font-size: 15px; font-weight: 700; color: white; flex-shrink: 0; overflow: hidden; transition: transform 0.2s ease; }
+        .dm-avatar { width: 42px; height: 42px; border-radius: 50%; background: linear-gradient(135deg, #a78bfa, #8b5cf6); display: flex; align-items: center; justify-content: center; font-size: 15px; font-weight: 700; color: white; flex-shrink: 0; overflow: hidden; transition: transform 0.2s ease; }
         .dm-item:hover .dm-avatar { transform: scale(1.05); }
 
         .dm-info { flex: 1; overflow: hidden; min-width: 0; }
@@ -988,7 +988,7 @@ function Chat({ username, onLogout }) {
         .sidebar-user { padding: 10px 14px; border-top: 1px solid rgba(255,255,255,0.07); display: flex; align-items: center; gap: 8px; transition: transform 0.2s ease; }
         .sidebar-user:hover { transform: translateY(-2px); }
         .user-avatar { width: 34px; height: 34px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 700; color: white; flex-shrink: 0; overflow: hidden; padding: 0; transition: transform 0.2s, box-shadow 0.2s; }
-        .user-avatar:hover { transform: scale(1.08); box-shadow: 0 0 14px rgba(124,58,237,0.6); }
+        .user-avatar:hover { transform: scale(1.08); box-shadow: 0 0 14px rgba(99,102,241,0.6); }
         .user-info { flex: 1; overflow: hidden; }
         .user-name { font-size: 13px; font-weight: 600; color: white; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .user-status { font-size: 10px; color: #10b981; margin-top: 1px; }
@@ -1073,7 +1073,7 @@ function Chat({ username, onLogout }) {
         }
         .welcome-title {
           font-size: 26px; font-weight: 800;
-          background: linear-gradient(135deg, #6366f1, #f093fb);
+          background: linear-gradient(135deg, #6366f1, #a78bfa);
           -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
           letter-spacing: 1px;
         }
@@ -1090,7 +1090,7 @@ function Chat({ username, onLogout }) {
         .chat-header { padding: 14px 22px; background: rgba(0,0,0,0.2); border-bottom: 1px solid rgba(255,255,255,0.07); display: flex; align-items: center; gap: 12px; position: relative; }
 
         .chat-header-avatar { width: 36px; height: 36px; border-radius: 9px; background: linear-gradient(135deg, #6366f1, #8b5cf6); display: flex; align-items: center; justify-content: center; font-size: 17px; flex-shrink: 0; overflow: hidden; transition: transform 0.2s, box-shadow 0.2s; }
-        .chat-header-avatar:hover { transform: scale(1.05); box-shadow: 0 0 0 3px rgba(124,58,237,0.35); }
+        .chat-header-avatar:hover { transform: scale(1.05); box-shadow: 0 0 0 3px rgba(99,102,241,0.35); }
         .chat-header-info { flex: 1; }
         .chat-header-name { font-size: 14px; font-weight: 700; color: white; }
         .chat-header-status { font-size: 11px; color: rgba(255,255,255,0.4); margin-top: 2px; display: flex; align-items: center; gap: 5px; }
@@ -1140,7 +1140,7 @@ function Chat({ username, onLogout }) {
         .msg-row.theirs { align-self: flex-start; animation: slideInLeft 0.25s ease-out; }
         .msg-row:hover .msg-bubble { transform: scale(1.01); }
 
-        .msg-avatar { width: 30px; height: 30px; border-radius: 50%; background: linear-gradient(135deg, #f093fb, #f5576c); display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; color: white; flex-shrink: 0; align-self: flex-end; overflow: hidden; padding: 0; }
+        .msg-avatar { width: 30px; height: 30px; border-radius: 50%; background: linear-gradient(135deg, #a78bfa, #8b5cf6); display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; color: white; flex-shrink: 0; align-self: flex-end; overflow: hidden; padding: 0; }
         .msg-row.mine .msg-avatar { background: linear-gradient(135deg, #6366f1, #8b5cf6); }
 
         .msg-content { display: flex; flex-direction: column; gap: 2px; }
@@ -1288,7 +1288,7 @@ function Chat({ username, onLogout }) {
         .lock-input { width: 100%; background: rgba(255,255,255,0.07); border: 1.5px solid rgba(255,215,0,0.28); border-radius: 9px; color: white; font-size: 14px; padding: 10px 13px; outline: none; text-align: center; letter-spacing: 4px; font-family: monospace; margin-bottom: 12px; }
         .lock-input:focus { border-color: rgba(255,215,0,0.55); }
         .lock-btn { width: 100%; padding: 11px; border: none; border-radius: 10px; font-size: 13px; font-weight: 700; cursor: pointer; margin-bottom: 7px; transition: all 0.18s; }
-        .lock-btn-primary { background: linear-gradient(135deg, #f39c12, #d35400); color: white; }
+        .lock-btn-primary { background: linear-gradient(135deg, #f59e0b, #b45309); color: white; }
         .lock-btn-cancel { background: rgba(255,255,255,0.07); color: rgba(255,255,255,0.55); border: 1px solid rgba(255,255,255,0.11) !important; }
 
         @media (max-width: 768px) {
@@ -1522,7 +1522,7 @@ function Chat({ username, onLogout }) {
               <div key={user.username}
                 className={`dm-item ${activeDMUser === user.username && activeRoom === 'dm' ? 'active' : ''}`}
                 onClick={() => openDM(user.username)}>
-                <div className="dm-avatar" style={{ background: user.avatar_color || '#6366f1' }}>
+                <div className="dm-avatar" style={{ background: user.avatar_color || '#667eea' }}>
                   {user.avatar_url
                     ? <img src={user.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
                     : getInitial(user.username)}
