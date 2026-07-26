@@ -108,6 +108,31 @@ function Chat({ username, onLogout }) {
   // ===== DM SORT TRACKING =====
   const [dmLastMessage, setDmLastMessage] = useState({});
 
+  // ===== SIDEBAR SEARCH (filters the Direct Messages list only — visual/UI addition,
+  // does not touch channel logic, sockets, or data fetching) =====
+  const [sidebarSearchQuery, setSidebarSearchQuery] = useState('');
+
+  // ===== AVATAR CROP MODAL STATE — intercepts the avatar file input before any
+  // upload happens. The user crops/repositions/zooms, then "Apply Photo" renders
+  // a circular base64 JPEG preview only; the actual Cloudinary upload is deferred
+  // until "Save Changes" is clicked (see saveProfile). =====
+  const [cropModalOpen, setCropModalOpen] = useState(false);
+  const [cropImageSrc, setCropImageSrc] = useState(null);
+  const [cropNaturalSize, setCropNaturalSize] = useState({ width: 0, height: 0 });
+  const [cropZoom, setCropZoom] = useState(1);
+  const [cropPosition, setCropPosition] = useState({ x: 0, y: 0 });
+  const [cropDragging, setCropDragging] = useState(false);
+  const [pendingAvatarBase64, setPendingAvatarBase64] = useState(null);
+
+  const CROP_VIEWPORT = 200;
+  const CROP_OUTPUT = 320;
+  const CROP_ZOOM_MIN = 1;
+  const CROP_ZOOM_MAX = 4;
+
+  const cropPointersRef = useRef(new Map());
+  const cropPinchStartRef = useRef({ distance: 0, zoom: 1 });
+  const cropDragStartRef = useRef({ x: 0, y: 0, posX: 0, posY: 0 });
+
   const messagesEndRef = useRef(null);
   const typingTimeoutRef = useRef(null);
   const searchInputRef = useRef(null);
@@ -135,6 +160,12 @@ function Chat({ username, onLogout }) {
     const timeB = dmLastMessage[roomB] || 0;
     return timeB - timeA;
   });
+
+  // ===== SIDEBAR SEARCH FILTER — purely a display filter over sortedUsers, doesn't
+  // touch allUsers/openDM/sockets. Empty query shows everyone (existing behavior). =====
+  const displayedSidebarUsers = sidebarSearchQuery.trim()
+    ? sortedUsers.filter(u => u.username.toLowerCase().includes(sidebarSearchQuery.trim().toLowerCase()))
+    : sortedUsers;
 
   useEffect(() => {
     const onFocus = () => { setIsTabFocused(true); };
@@ -576,13 +607,172 @@ function Chat({ username, onLogout }) {
     }
   };
 
+  // ===== AVATAR CROP MODAL LOGIC =====
+
+  // Clamp the drag offset so the image always fully covers the circular viewport
+  // at the current zoom level (prevents dragging in empty/transparent space).
+  const clampCropPosition = (pos, zoom, natural) => {
+    if (!natural.width || !natural.height) return pos;
+    const baseScale = Math.max(CROP_VIEWPORT / natural.width, CROP_VIEWPORT / natural.height);
+    const scale = baseScale * zoom;
+    const dispW = natural.width * scale;
+    const dispH = natural.height * scale;
+    const maxX = Math.max(0, (dispW - CROP_VIEWPORT) / 2);
+    const maxY = Math.max(0, (dispH - CROP_VIEWPORT) / 2);
+    return {
+      x: Math.min(maxX, Math.max(-maxX, pos.x)),
+      y: Math.min(maxY, Math.max(-maxY, pos.y)),
+    };
+  };
+
+  // Intercepts the avatar file input: instead of uploading immediately, read the
+  // file and open the crop modal on top of Profile Settings.
+  const handleAvatarFileSelect = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      setCropImageSrc(ev.target.result);
+      setCropNaturalSize({ width: 0, height: 0 });
+      setCropZoom(1);
+      setCropPosition({ x: 0, y: 0 });
+      setCropModalOpen(true);
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  };
+
+  const handleCropImageLoad = (e) => {
+    setCropNaturalSize({ width: e.target.naturalWidth, height: e.target.naturalHeight });
+  };
+
+  // Unified pointer handling: works for mouse drag (desktop) and touch drag/pinch
+  // (mobile) through the same Pointer Events code path.
+  const handleCropPointerDown = (e) => {
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch (err) {}
+    cropPointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (cropPointersRef.current.size === 1) {
+      setCropDragging(true);
+      cropDragStartRef.current = { x: e.clientX, y: e.clientY, posX: cropPosition.x, posY: cropPosition.y };
+    } else if (cropPointersRef.current.size === 2) {
+      const pts = Array.from(cropPointersRef.current.values());
+      const dx = pts[0].x - pts[1].x, dy = pts[0].y - pts[1].y;
+      cropPinchStartRef.current = { distance: Math.hypot(dx, dy) || 1, zoom: cropZoom };
+    }
+  };
+
+  const handleCropPointerMove = (e) => {
+    if (!cropPointersRef.current.has(e.pointerId)) return;
+    cropPointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+    if (cropPointersRef.current.size === 2) {
+      const pts = Array.from(cropPointersRef.current.values());
+      const dx = pts[0].x - pts[1].x, dy = pts[0].y - pts[1].y;
+      const distance = Math.hypot(dx, dy);
+      const ratio = distance / cropPinchStartRef.current.distance;
+      const newZoom = Math.min(CROP_ZOOM_MAX, Math.max(CROP_ZOOM_MIN, cropPinchStartRef.current.zoom * ratio));
+      setCropZoom(newZoom);
+      setCropPosition(prev => clampCropPosition(prev, newZoom, cropNaturalSize));
+    } else if (cropPointersRef.current.size === 1 && cropDragging) {
+      const dx = e.clientX - cropDragStartRef.current.x;
+      const dy = e.clientY - cropDragStartRef.current.y;
+      const newPos = { x: cropDragStartRef.current.posX + dx, y: cropDragStartRef.current.posY + dy };
+      setCropPosition(clampCropPosition(newPos, cropZoom, cropNaturalSize));
+    }
+  };
+
+  const handleCropPointerUp = (e) => {
+    cropPointersRef.current.delete(e.pointerId);
+    if (cropPointersRef.current.size === 0) setCropDragging(false);
+  };
+
+  const handleCropWheel = (e) => {
+    e.preventDefault();
+    const delta = e.deltaY > 0 ? -0.1 : 0.1;
+    const newZoom = Math.min(CROP_ZOOM_MAX, Math.max(CROP_ZOOM_MIN, cropZoom + delta));
+    setCropZoom(newZoom);
+    setCropPosition(prev => clampCropPosition(prev, newZoom, cropNaturalSize));
+  };
+
+  const handleCropZoomSlider = (e) => {
+    const newZoom = parseFloat(e.target.value);
+    setCropZoom(newZoom);
+    setCropPosition(prev => clampCropPosition(prev, newZoom, cropNaturalSize));
+  };
+
+  const cancelCrop = () => {
+    setCropModalOpen(false);
+    setCropImageSrc(null);
+    setCropNaturalSize({ width: 0, height: 0 });
+    setCropZoom(1);
+    setCropPosition({ x: 0, y: 0 });
+    cropPointersRef.current.clear();
+  };
+
+  // Crops the image into a circle using Canvas, matching exactly what the crop
+  // viewport shows (same base-scale/zoom/offset math), then stores the base64
+  // JPEG as a PREVIEW only. It is not uploaded until Save Changes is clicked.
+  const applyCropPhoto = () => {
+    if (!cropImageSrc || !cropNaturalSize.width || !cropNaturalSize.height) return;
+    const img = new Image();
+    img.onload = () => {
+      const baseScale = Math.max(CROP_VIEWPORT / cropNaturalSize.width, CROP_VIEWPORT / cropNaturalSize.height);
+      const scale = baseScale * cropZoom;
+      const dispW = cropNaturalSize.width * scale;
+      const dispH = cropNaturalSize.height * scale;
+      const topLeftX = (CROP_VIEWPORT - dispW) / 2 + cropPosition.x;
+      const topLeftY = (CROP_VIEWPORT - dispH) / 2 + cropPosition.y;
+      const ratio = CROP_OUTPUT / CROP_VIEWPORT;
+
+      const canvas = document.createElement('canvas');
+      canvas.width = CROP_OUTPUT;
+      canvas.height = CROP_OUTPUT;
+      const ctx = canvas.getContext('2d');
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(CROP_OUTPUT / 2, CROP_OUTPUT / 2, CROP_OUTPUT / 2, 0, Math.PI * 2);
+      ctx.closePath();
+      ctx.clip();
+      ctx.drawImage(img, topLeftX * ratio, topLeftY * ratio, dispW * ratio, dispH * ratio);
+      ctx.restore();
+
+      const base64 = canvas.toDataURL('image/jpeg', 0.92);
+      setPendingAvatarBase64(base64);
+      setProfileEdit(prev => ({ ...prev, avatar_url: base64 }));
+      cancelCrop();
+    };
+    img.src = cropImageSrc;
+  };
+
+  // Converts the cropped base64 JPEG into a File so it can be sent through the
+  // existing uploadToCloudinary() function unchanged.
+  const base64ToFile = (base64, filename) => {
+    const arr = base64.split(',');
+    const mimeMatch = arr[0].match(/:(.*?);/);
+    const mime = mimeMatch ? mimeMatch[1] : 'image/jpeg';
+    const bstr = atob(arr[1]);
+    let n = bstr.length;
+    const u8arr = new Uint8Array(n);
+    while (n--) u8arr[n] = bstr.charCodeAt(n);
+    return new File([u8arr], filename, { type: mime });
+  };
+
   const saveProfile = async () => {
     setProfileSaving(true); setProfileMsg('');
     try {
-      await axios.put(`https://s-nalantamil-chat.onrender.com/profile/${username}`, profileEdit);
+      let updatedProfileEdit = profileEdit;
+      // Real upload only happens now, on Save Changes — not when the crop was applied.
+      if (pendingAvatarBase64) {
+        const avatarFile = base64ToFile(pendingAvatarBase64, `avatar_${username}_${Date.now()}.jpg`);
+        const uploadedUrl = await uploadToCloudinary(avatarFile);
+        updatedProfileEdit = { ...profileEdit, avatar_url: uploadedUrl };
+        setProfileEdit(updatedProfileEdit);
+      }
+      await axios.put(`https://s-nalantamil-chat.onrender.com/profile/${username}`, updatedProfileEdit);
       const res = await axios.get(`https://s-nalantamil-chat.onrender.com/profile/${username}`);
       setProfile(res.data);
       setProfileEdit(prev => ({ ...prev, ...res.data, current_password: '', new_password: '' }));
+      setPendingAvatarBase64(null);
       setProfileMsg('✅ Profile updated successfully!');
       setTimeout(() => setProfileMsg(''), 3000);
     } catch (err) {
@@ -965,77 +1155,99 @@ function Chat({ username, onLogout }) {
         .reconnect-dot { width: 8px; height: 8px; background: white; border-radius: 50%; flex-shrink: 0; }
 
         .sidebar {
-          background: rgba(255,255,255,0.04);
-          backdrop-filter: blur(12px);
-          -webkit-backdrop-filter: blur(12px);
-          border-right: 1px solid rgba(255,255,255,0.08);
+          background: #0d0d1a;
+          border-right: 1px solid rgba(255,255,255,0.05);
           display: flex; flex-direction: column;
           overflow-y: auto;
           touch-action: pan-y;
           scrollbar-width: thin;
-          scrollbar-color: rgba(99,102,241,0.4) transparent;
+          scrollbar-color: rgba(99,102,241,0.25) transparent;
         }
-        .sidebar::-webkit-scrollbar { width: 4px; }
-        .sidebar::-webkit-scrollbar-thumb { background: transparent; border-radius: 4px; transition: background 0.2s; }
-        .sidebar:hover::-webkit-scrollbar-thumb { background: rgba(99,102,241,0.4); }
+        .sidebar::before {
+          content: '';
+          position: absolute; inset: 0;
+          pointer-events: none;
+          background: radial-gradient(ellipse 80% 40% at 50% 0%, rgba(99,102,241,0.07) 0%, transparent 60%);
+        }
+        .sidebar::-webkit-scrollbar { width: 3px; }
+        .sidebar::-webkit-scrollbar-thumb { background: transparent; border-radius: 2px; transition: background 0.2s; }
+        .sidebar:hover::-webkit-scrollbar-thumb { background: rgba(99,102,241,0.25); }
+        .sidebar:hover::-webkit-scrollbar-thumb:hover { background: rgba(99,102,241,0.45); }
 
-        .sidebar-logo { padding: 20px 20px 14px; border-bottom: 1px solid rgba(255,255,255,0.07); }
+        .sidebar-logo { padding: 16px 16px 12px; border-bottom: 1px solid rgba(255,255,255,0.05); position: relative; z-index: 1; }
         .logo-row { display: flex; align-items: center; gap: 10px; }
-        .logo-emoji { font-size: 24px; filter: drop-shadow(0 0 8px rgba(99,102,241,0.9)); cursor: pointer; transition: transform 0.3s; }
+        .logo-emoji { font-size: 22px; filter: drop-shadow(0 0 8px rgba(99,102,241,0.9)); cursor: pointer; transition: transform 0.3s; }
         .logo-emoji:hover { transform: scale(1.2) rotate(10deg); }
-        .logo-name { font-size: 19px; font-weight: 800; background: linear-gradient(135deg, #6366f1, #a78bfa); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; letter-spacing: 2px; }
+        .logo-name { font-size: 16px; font-weight: 700; letter-spacing: -0.02em; background: linear-gradient(135deg, #818cf8, #c4b5fd); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
 
-        .sidebar-section-title { padding: 14px 20px 6px; font-size: 10px; font-weight: 700; color: rgba(255,255,255,0.3); letter-spacing: 1.5px; text-transform: uppercase; display: flex; align-items: center; gap: 6px; }
+        .sidebar-search-wrap { margin: 12px 12px 8px; position: relative; z-index: 1; }
+        .sidebar-search-icon { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: #334155; font-size: 13px; pointer-events: none; }
+        .sidebar-search-input {
+          width: 100%; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.07);
+          border-radius: 10px; padding: 8px 12px 8px 32px; color: #94a3b8; font-size: 13px;
+          outline: none; transition: all 200ms;
+        }
+        .sidebar-search-input::placeholder { color: #334155; }
+        .sidebar-search-input:focus { background: rgba(255,255,255,0.06); border-color: rgba(99,102,241,0.4); color: #f1f5f9; }
 
-        .channel-item { margin: 2px 10px; padding: 10px 12px; border-radius: 10px; display: flex; align-items: center; gap: 10px; cursor: pointer; transition: transform 0.2s ease, background 0.2s ease, border-color 0.2s ease; border-left: 3px solid transparent; }
-        .channel-item:hover { background: rgba(255,255,255,0.07); transform: translateX(3px); border-left-color: rgba(99,102,241,0.6); }
-        .channel-item.active { background: rgba(99,102,241,0.2); border: 1px solid rgba(99,102,241,0.25); border-left: 3px solid #6366f1; box-shadow: -2px 0 12px rgba(99,102,241,0.25); }
-        .channel-icon { font-size: 16px; }
+        .sidebar-section-title { padding: 16px 16px 6px; font-size: 10px; font-weight: 600; color: #334155; letter-spacing: 1.4px; text-transform: uppercase; display: flex; align-items: center; justify-content: space-between; position: relative; z-index: 1; }
+        .sidebar-section-add-btn {
+          width: 18px; height: 18px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+          color: #475569; font-size: 16px; cursor: pointer; transition: all 150ms; background: none; border: none;
+        }
+        .sidebar-section-add-btn:hover { color: #818cf8; background: rgba(99,102,241,0.1); }
+
+        .channel-item { margin: 1px 8px; padding: 8px 10px; border-radius: 10px; display: flex; align-items: center; gap: 10px; cursor: pointer; transition: all 180ms; border-left: 2px solid transparent; position: relative; z-index: 1; }
+        .channel-item:hover { background: rgba(99,102,241,0.07); border-left-color: rgba(99,102,241,0.3); transform: translateX(2px); }
+        .channel-item.active { background: rgba(99,102,241,0.14); border-left: 2px solid #6366f1; box-shadow: inset 0 0 0 1px rgba(99,102,241,0.15); }
+        .channel-icon { font-size: 16px; color: #6366f1; width: 20px; text-align: center; }
         .channel-info { flex: 1; overflow: hidden; }
-        .channel-name { font-size: 13px; font-weight: 600; color: white; }
-        .channel-sub { font-size: 10px; color: rgba(255,255,255,0.35); margin-top: 1px; }
-        .channel-badge { background: linear-gradient(135deg, #6366f1, #8b5cf6); color: white; font-size: 10px; font-weight: 800; min-width: 16px; height: 16px; border-radius: 8px; display: flex; align-items: center; justify-content: center; padding: 0 4px; animation: badgePulse 2s ease-in-out infinite; }
+        .channel-name { font-size: 14px; color: #94a3b8; }
+        .channel-item.active .channel-name { color: #f1f5f9; font-weight: 500; }
+        .channel-sub { font-size: 10px; color: rgba(255,255,255,0.28); margin-top: 1px; }
+        .channel-badge { background: #6366f1; color: white; font-size: 11px; font-weight: 700; min-width: 20px; height: 20px; border-radius: 10px; display: flex; align-items: center; justify-content: center; padding: 0 5px; animation: badgePop 300ms ease; }
 
-        .dm-item { margin: 2px 10px; padding: 10px 12px; border-radius: 10px; display: flex; align-items: center; gap: 10px; cursor: pointer; transition: transform 0.2s ease, background 0.2s ease, border-color 0.2s ease; border-left: 3px solid transparent; }
-        .dm-item:hover { background: rgba(255,255,255,0.07); transform: translateX(3px); border-left-color: rgba(99,102,241,0.6); }
-        .dm-item.active { background: rgba(99,102,241,0.2); border: 1px solid rgba(99,102,241,0.25); border-left: 3px solid #6366f1; box-shadow: -2px 0 12px rgba(99,102,241,0.25); }
+        .dm-item { margin: 1px 8px; padding: 8px 10px; border-radius: 10px; display: flex; align-items: center; gap: 10px; cursor: pointer; transition: all 180ms; border-left: 2px solid transparent; position: relative; z-index: 1; }
+        .dm-item:hover { background: rgba(99,102,241,0.07); border-left-color: rgba(99,102,241,0.3); transform: translateX(2px); }
+        .dm-item.active { background: rgba(99,102,241,0.14); border-left: 2px solid #6366f1; box-shadow: inset 0 0 0 1px rgba(99,102,241,0.15); }
 
-        .dm-avatar { width: 42px; height: 42px; border-radius: 50%; background: linear-gradient(135deg, #a78bfa, #8b5cf6); display: flex; align-items: center; justify-content: center; font-size: 15px; font-weight: 700; color: white; flex-shrink: 0; overflow: hidden; transition: transform 0.2s ease; }
-        .dm-item:hover .dm-avatar { transform: scale(1.05); }
+        .dm-avatar { width: 38px; height: 38px; border-radius: 50%; background: linear-gradient(135deg, #a78bfa, #8b5cf6); display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 700; color: white; flex-shrink: 0; overflow: hidden; position: relative; }
 
         .dm-info { flex: 1; overflow: hidden; min-width: 0; }
         .dm-name-row { display: flex; align-items: center; justify-content: space-between; gap: 4px; }
-        .dm-name { font-size: 13px; font-weight: 600; color: white; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .dm-time { font-size: 10px; color: rgba(255,255,255,0.3); flex-shrink: 0; }
-        .dm-preview-row { display: flex; align-items: center; justify-content: space-between; margin-top: 2px; }
-        .dm-preview { font-size: 11px; color: rgba(255,255,255,0.35); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; }
+        .dm-name { font-size: 14px; font-weight: 500; color: #e2e8f0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .dm-item.active .dm-name { color: white; font-weight: 600; }
+        .dm-time { font-size: 11px; color: #334155; flex-shrink: 0; align-self: flex-start; margin-top: 2px; }
+        .dm-time.unread { color: #6366f1; font-weight: 600; }
+        .dm-preview-row { display: flex; align-items: center; justify-content: space-between; margin-top: 1px; }
+        .dm-preview { font-size: 12px; color: #475569; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; }
         .dm-lock-icon { font-size: 11px; color: rgba(255,215,0,0.5); flex-shrink: 0; margin-left: 4px; }
 
-        .online-dot { position: relative; width: 7px; height: 7px; background: #10b981; border-radius: 50%; box-shadow: 0 0 6px #10b981; }
+        .online-dot-wrap { position: absolute; bottom: 1px; right: 1px; }
+        .online-dot { position: relative; width: 10px; height: 10px; border-radius: 50%; background: #10b981; border: 2px solid #0d0d1a; box-shadow: 0 0 6px rgba(16,185,129,0.6); }
         .online-dot::after {
           content: '';
           position: absolute; inset: 0;
           border-radius: 50%;
           background: #10b981;
-          animation: onlinePing 1.8s ease-out infinite;
+          animation: onlinePing 2s infinite;
         }
 
         .sidebar-spacer { flex: 1; min-height: 12px; }
 
-        .sidebar-user { padding: 10px 14px; border-top: 1px solid rgba(255,255,255,0.07); display: flex; align-items: center; gap: 8px; transition: transform 0.2s ease; }
-        .sidebar-user:hover { transform: translateY(-2px); }
-        .user-avatar { width: 34px; height: 34px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 700; color: white; flex-shrink: 0; overflow: hidden; padding: 0; transition: transform 0.2s, box-shadow 0.2s; }
-        .user-avatar:hover { transform: scale(1.08); box-shadow: 0 0 14px rgba(99,102,241,0.6); }
+        .sidebar-user { padding: 10px 12px; border-top: 1px solid rgba(255,255,255,0.05); background: rgba(0,0,0,0.3); backdrop-filter: blur(10px); display: flex; align-items: center; gap: 10px; position: relative; z-index: 1; }
+        .user-avatar { width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 700; color: white; flex-shrink: 0; overflow: hidden; padding: 0; border: 1.5px solid rgba(99,102,241,0.4); cursor: pointer; transition: all 200ms; }
+        .user-avatar:hover { border-color: #6366f1; box-shadow: 0 0 12px rgba(99,102,241,0.3); }
         .user-info { flex: 1; overflow: hidden; }
-        .user-name { font-size: 13px; font-weight: 600; color: white; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .user-status { font-size: 10px; color: #10b981; margin-top: 1px; }
+        .user-name { font-size: 13px; font-weight: 600; color: #e2e8f0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .user-status { font-size: 11px; color: #10b981; margin-top: 1px; }
 
-        .icon-btn { width: 30px; height: 30px; border-radius: 9px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 14px; transition: all 0.2s; flex-shrink: 0; border: 1px solid transparent; }
-        .logout-icon-btn { background: rgba(239,68,68,0.15); border-color: rgba(239,68,68,0.3); color: #ef4444; }
-        .logout-icon-btn:hover { background: rgba(239,68,68,0.3); color: #ef4444; }
+        .icon-btn { width: 32px; height: 32px; border-radius: 8px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 14px; transition: all 0.2s; flex-shrink: 0; border: none; background: transparent; }
+        .logout-icon-btn { color: #475569; }
+        .logout-icon-btn:hover { background: rgba(239,68,68,0.1); color: #ef4444; }
         .logout-icon-btn:active { animation: shakeX 0.35s ease; }
-        .profile-icon-btn { background: rgba(99,102,241,0.15); border-color: rgba(99,102,241,0.3); color: #6366f1; }
-        .profile-icon-btn:hover { background: rgba(99,102,241,0.3); transform: rotate(90deg); }
+        .profile-icon-btn { color: #475569; }
+        .profile-icon-btn:hover { background: rgba(255,255,255,0.08); color: #818cf8; transform: rotate(90deg); transition: transform 400ms ease, background 0.2s, color 0.2s; }
 
         .ripple-btn { position: relative; overflow: hidden; }
         .ripple-btn::after { content: ''; position: absolute; width: 10px; height: 10px; background: rgba(255,255,255,0.3); border-radius: 50%; top: 50%; left: 50%; transform: translate(-50%,-50%) scale(0); opacity: 1; }
@@ -1346,27 +1558,146 @@ function Chat({ username, onLogout }) {
         .drag-overlay-text { font-size: 20px; font-weight: 700; color: white; }
         .drag-overlay-sub { font-size: 12px; color: rgba(255,255,255,0.55); }
 
+        /* ===== PROFILE SETTINGS MODAL — two-panel redesign ===== */
         .profile-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.72); z-index: 9999; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(5px); }
-        .profile-modal { background: rgba(255,255,255,0.06); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.12); border-radius: 18px; padding: 24px; width: 390px; max-width: 92vw; box-shadow: 0 24px 48px rgba(0,0,0,0.4); max-height: 90vh; overflow-y: auto; animation: modalSpringIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1); }
-        .profile-modal-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; }
-        .profile-modal-title { font-size: 16px; font-weight: 700; color: white; }
-        .profile-close-btn { background: none; border: none; color: rgba(255,255,255,0.38); font-size: 19px; cursor: pointer; }
-        .profile-avatar-section { display: flex; flex-direction: column; align-items: center; gap: 12px; margin-bottom: 18px; }
-        .profile-avatar-preview { width: 72px; height: 72px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 28px; font-weight: 700; color: white; border: 3px solid rgba(255,255,255,0.18); }
-        .avatar-colors { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; }
-        .avatar-color-btn { width: 24px; height: 24px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; transition: all 0.2s; }
-        .avatar-color-btn:hover { transform: scale(1.3); box-shadow: 0 0 10px 2px currentColor; }
-        .avatar-color-btn.selected { border-color: white; }
-        .profile-field { margin-bottom: 12px; }
-        .profile-label { font-size: 10px; font-weight: 700; color: rgba(255,255,255,0.38); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 5px; display: block; }
-        .profile-input { width: 100%; background: rgba(255,255,255,0.07); border: 1.5px solid rgba(255,255,255,0.11); border-radius: 9px; color: white; font-size: 13px; padding: 8px 11px; outline: none; font-family: 'Segoe UI', sans-serif; transition: border-color 0.2s, box-shadow 0.2s; }
-        .profile-input:focus { border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99,102,241,0.15); }
-        .profile-input::placeholder { color: rgba(255,255,255,0.22); }
-        .profile-divider { height: 1px; background: rgba(255,255,255,0.07); margin: 14px 0; }
-        .profile-save-btn { width: 100%; background: linear-gradient(120deg, #6366f1 0%, #8b5cf6 45%, #a78bfa 50%, #8b5cf6 55%, #6366f1 100%); background-size: 250% 100%; border: none; color: white; padding: 10px; border-radius: 10px; font-size: 13px; font-weight: 700; cursor: pointer; transition: background-position 0.5s ease, transform 0.15s ease; }
-        .profile-save-btn:hover { background-position: 100% 0; transform: translateY(-1px); }
-        .profile-save-btn:disabled { opacity: 0.55; cursor: not-allowed; }
-        .profile-msg { text-align: center; font-size: 12px; margin-top: 9px; color: rgba(255,255,255,0.65); }
+        .profile-modal {
+          background: #111120;
+          border: 1px solid rgba(255,255,255,0.07);
+          border-radius: 20px;
+          box-shadow: 0 32px 64px rgba(0,0,0,0.85), 0 0 0 1px rgba(99,102,241,0.08);
+          width: 680px; max-width: 90vw;
+          max-height: 90vh; overflow-y: auto;
+          animation: modalSpringIn 280ms cubic-bezier(0.34,1.56,0.64,1);
+        }
+        .pm-header {
+          height: 56px; flex-shrink: 0;
+          display: flex; align-items: center; justify-content: space-between;
+          padding: 0 24px;
+          border-bottom: 1px solid rgba(255,255,255,0.06);
+        }
+        .pm-header-left { display: flex; align-items: center; gap: 8px; font-size: 16px; font-weight: 600; color: #f1f5f9; }
+        .pm-header-icon { color: #6366f1; }
+        .pm-close-btn {
+          width: 32px; height: 32px; border-radius: 50%;
+          background: none; border: none; color: #475569; font-size: 18px; cursor: pointer;
+          display: flex; align-items: center; justify-content: center;
+          transition: all 0.2s;
+        }
+        .pm-close-btn:hover { background: rgba(255,255,255,0.08); color: #f1f5f9; }
+
+        .pm-body { padding: 24px; display: grid; grid-template-columns: 200px 1fr; gap: 24px; }
+
+        .pm-left-panel {
+          background: rgba(99,102,241,0.04);
+          border: 1px solid rgba(99,102,241,0.1);
+          border-radius: 14px;
+          padding: 24px 16px;
+          display: flex; flex-direction: column; align-items: center; gap: 16px;
+        }
+        .pm-avatar-wrap {
+          width: 88px; height: 88px; border-radius: 50%;
+          border: 2.5px solid rgba(99,102,241,0.5);
+          box-shadow: 0 0 20px rgba(99,102,241,0.2);
+          cursor: pointer; overflow: hidden;
+          display: flex; align-items: center; justify-content: center;
+          font-size: 30px; font-weight: 700; color: white;
+          transition: all 200ms;
+          position: relative;
+        }
+        .pm-avatar-wrap:hover { border-color: #6366f1; transform: scale(1.03); }
+        .pm-avatar-wrap img { width: 100%; height: 100%; object-fit: cover; }
+        .pm-edit-label {
+          font-size: 11px; color: #6366f1; text-transform: uppercase; letter-spacing: 0.08em;
+          cursor: pointer; transition: color 0.15s;
+        }
+        .pm-edit-label:hover { color: #818cf8; }
+        .pm-divider { height: 1px; width: 100%; background: rgba(255,255,255,0.06); }
+        .pm-color-label { font-size: 11px; color: #475569; text-transform: uppercase; letter-spacing: 0.08em; align-self: flex-start; }
+        .pm-color-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+        .pm-color-btn {
+          width: 28px; height: 28px; border-radius: 50%; cursor: pointer;
+          border: none; transition: all 0.2s;
+        }
+        .pm-color-btn:hover { transform: scale(1.3); box-shadow: 0 0 10px 3px currentColor; }
+        .pm-color-btn.selected { outline: 2px solid white; outline-offset: 2px; }
+
+        .pm-right-panel { display: flex; flex-direction: column; gap: 0; min-width: 0; }
+        .pm-section-label { font-size: 10px; color: #334155; text-transform: uppercase; letter-spacing: 0.12em; margin-bottom: 8px; }
+        .pm-spacer { height: 20px; }
+        .pm-field-label { font-size: 11px; color: #475569; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 6px; display: block; }
+        .pm-input {
+          width: 100%; background: #0d0d1a; border: 1px solid rgba(255,255,255,0.07);
+          border-radius: 10px; color: #f1f5f9; padding: 10px 14px; font-size: 14px;
+          outline: none; margin-bottom: 12px; transition: all 200ms;
+          font-family: 'Segoe UI', sans-serif;
+        }
+        .pm-input:focus { border-color: rgba(99,102,241,0.6); box-shadow: 0 0 0 3px rgba(99,102,241,0.12); }
+        .pm-input::placeholder { color: rgba(255,255,255,0.2); }
+        .pm-input:disabled { opacity: 0.45; cursor: not-allowed; }
+
+        .pm-footer {
+          height: 64px; flex-shrink: 0;
+          display: flex; align-items: center; justify-content: space-between;
+          padding: 0 24px;
+          border-top: 1px solid rgba(255,255,255,0.06);
+          background: rgba(0,0,0,0.2);
+        }
+        .pm-footer-note { font-size: 12px; color: #334155; }
+        .pm-save-btn {
+          background: linear-gradient(135deg, #6366f1, #8b5cf6);
+          padding: 10px 28px; border-radius: 10px; border: none;
+          color: white; font-weight: 600; font-size: 14px; cursor: pointer;
+          transition: all 200ms;
+        }
+        .pm-save-btn:hover { filter: brightness(1.1); box-shadow: 0 6px 20px rgba(99,102,241,0.4); transform: scale(1.02); }
+        .pm-save-btn:active { transform: scale(0.98); }
+        .pm-save-btn:disabled { opacity: 0.55; cursor: not-allowed; transform: none; }
+        .pm-msg { text-align: center; font-size: 12px; padding: 0 24px 16px; color: rgba(255,255,255,0.65); }
+
+        /* ===== AVATAR CROP MODAL ===== */
+        .crop-overlay {
+          position: fixed; inset: 0; z-index: 10050;
+          background: rgba(0,0,0,0.85);
+          backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+          display: flex; align-items: center; justify-content: center;
+          animation: fadeIn 200ms ease;
+        }
+        .crop-card {
+          background: #111120;
+          border: 1px solid rgba(255,255,255,0.08);
+          border-radius: 16px;
+          padding: 24px;
+          max-width: 340px; width: 90vw;
+          display: flex; flex-direction: column; align-items: center; gap: 14px;
+          animation: modalSpringIn 280ms cubic-bezier(0.34,1.56,0.64,1);
+        }
+        .crop-title { font-size: 16px; font-weight: 700; color: #f1f5f9; }
+        .crop-subtitle { font-size: 12px; color: #94a3b8; margin-top: -8px; text-align: center; }
+        .crop-viewport {
+          width: 200px; height: 200px; border-radius: 50%;
+          background: #1c1c32;
+          border: 2px dashed rgba(99,102,241,0.8);
+          overflow: hidden; position: relative;
+          cursor: grab; touch-action: none;
+        }
+        .crop-viewport.dragging { cursor: grabbing; }
+        .crop-viewport img { position: absolute; top: 50%; left: 50%; max-width: none; user-select: none; -webkit-user-drag: none; pointer-events: none; }
+        .crop-zoom-row { width: 100%; display: flex; align-items: center; gap: 10px; }
+        .crop-zoom-slider { flex: 1; accent-color: #6366f1; }
+        .crop-zoom-value { font-size: 12px; color: #94a3b8; min-width: 32px; text-align: right; }
+        .crop-actions { width: 100%; display: flex; gap: 10px; margin-top: 4px; }
+        .crop-cancel-btn {
+          flex: 1; background: transparent; border: 1px solid rgba(255,255,255,0.15);
+          color: #94a3b8; padding: 10px; border-radius: 10px; font-size: 13px; font-weight: 600;
+          cursor: pointer; transition: all 0.2s;
+        }
+        .crop-cancel-btn:hover { border-color: rgba(255,255,255,0.35); color: #f1f5f9; }
+        .crop-apply-btn {
+          flex: 1; background: linear-gradient(135deg, #6366f1, #8b5cf6); border: none;
+          color: white; padding: 10px; border-radius: 10px; font-size: 13px; font-weight: 700;
+          cursor: pointer; transition: all 0.2s;
+        }
+        .crop-apply-btn:hover { box-shadow: 0 0 16px rgba(99,102,241,0.5); }
 
         .lock-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.82); z-index: 99999; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(7px); }
         .lock-modal { background: rgba(12,12,32,0.99); border: 1px solid rgba(255,215,0,0.18); border-radius: 18px; padding: 26px; width: 340px; max-width: 92vw; text-align: center; }
