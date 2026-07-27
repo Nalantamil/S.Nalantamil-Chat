@@ -38,6 +38,41 @@ const AVATAR_COLORS = ['#667eea','#e74c3c','#2ecc71','#f39c12','#e91e63','#00bcd
 
 const getDMRoomId = (user1, user2) => [user1, user2].sort().join('__dm__');
 
+// ===== ICONS — inline SVGs matching Lucide's paths/stroke-width (no new npm
+// dependency required). Consistent 1.8 stroke-width, size via prop. =====
+const Icon = ({ path, size = 18, className = '', style = {}, children }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"
+    className={className} style={{ flexShrink: 0, ...style }}>
+    {children}
+  </svg>
+);
+const SearchIcon = (p) => <Icon {...p}><circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" /></Icon>;
+const PaletteIcon = (p) => <Icon {...p}><circle cx="13.5" cy="6.5" r=".5" /><circle cx="17.5" cy="10.5" r=".5" /><circle cx="8.5" cy="7.5" r=".5" /><circle cx="6.5" cy="12.5" r=".5" /><path d="M12 2a10 10 0 1 0 0 20c1.1 0 2-.9 2-2 0-.5-.2-1-.5-1.4-.3-.4-.5-.8-.5-1.3 0-1.1.9-2 2-2h2.3A4.2 4.2 0 0 0 22 11c0-5-4.5-9-10-9Z" /></Icon>;
+const PinIcon = (p) => <Icon {...p}><path d="M12 17v5" /><path d="M9 10.8V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v6.8a2 2 0 0 0 .4 1.2l1.2 1.6a1 1 0 0 1-.8 1.6H6.2a1 1 0 0 1-.8-1.6l1.2-1.6a2 2 0 0 0 .4-1.2Z" /></Icon>;
+const SmileIcon = (p) => <Icon {...p}><circle cx="12" cy="12" r="10" /><path d="M8 14s1.5 2 4 2 4-2 4-2" /><line x1="9" y1="9" x2="9.01" y2="9" /><line x1="15" y1="9" x2="15.01" y2="9" /></Icon>;
+const CameraIcon = (p) => <Icon {...p}><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3Z" /><circle cx="12" cy="13" r="3" /></Icon>;
+const SaveIcon = (p) => <Icon {...p}><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z" /><path d="M17 21v-8H7v8" /><path d="M7 3v5h8" /></Icon>;
+const SendIcon = (p) => <Icon {...p}><path d="m22 2-7 20-4-9-9-4Z" /><path d="M22 2 11 13" /></Icon>;
+const SettingsIcon = (p) => <Icon {...p}><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 0 1-4 0v-.1a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 0 1 0-4h.1a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 0 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 0 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z" /></Icon>;
+const LogOutIcon = (p) => <Icon {...p}><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><path d="M16 17l5-5-5-5" /><path d="M21 12H9" /></Icon>;
+const LockIcon = (p) => <Icon {...p}><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></Icon>;
+const LockOpenIcon = (p) => <Icon {...p}><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 9.9-1" /></Icon>;
+const GlobeIcon = (p) => <Icon {...p}><circle cx="12" cy="12" r="10" /><path d="M2 12h20" /><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10Z" /></Icon>;
+const HashIcon = (p) => <Icon {...p}><line x1="4" y1="9" x2="20" y2="9" /><line x1="4" y1="15" x2="20" y2="15" /><line x1="10" y1="3" x2="8" y2="21" /><line x1="16" y1="3" x2="14" y2="21" /></Icon>;
+const BellIcon = (p) => <Icon {...p}><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" /><path d="M10.3 21a1.9 1.9 0 0 0 3.4 0" /></Icon>;
+const BellOffIcon = (p) => <Icon {...p}><path d="M8.7 3a6 6 0 0 1 9.3 5c0 3.8.9 6.1 1.7 7.4" /><path d="M17.6 17H3s3-2 3-9c0-.5 0-1 .1-1.5" /><path d="M10.3 21a1.9 1.9 0 0 0 3.4 0" /><line x1="1" y1="1" x2="23" y2="23" /></Icon>;
+const XIcon = (p) => <Icon {...p}><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></Icon>;
+const ChevronLeftIcon = (p) => <Icon {...p}><path d="m15 18-6-6 6-6" /></Icon>;
+const MenuIcon = (p) => <Icon {...p}><line x1="4" y1="7" x2="20" y2="7" /><line x1="4" y1="12" x2="20" y2="12" /><line x1="4" y1="17" x2="20" y2="17" /></Icon>;
+const Volume2Icon = (p) => <Icon {...p}><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" /><path d="M15.5 8.5a5 5 0 0 1 0 7" /><path d="M18.5 5.5a9 9 0 0 1 0 13" /></Icon>;
+const VolumeXIcon = (p) => <Icon {...p}><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" /><line x1="23" y1="9" x2="17" y2="15" /><line x1="17" y1="9" x2="23" y2="15" /></Icon>;
+const MoreVerticalIcon = (p) => <Icon {...p}><circle cx="12" cy="5" r="1.2" /><circle cx="12" cy="12" r="1.2" /><circle cx="12" cy="19" r="1.2" /></Icon>;
+const ImageIcon = (p) => <Icon {...p}><rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="9" cy="9" r="2" /><path d="m21 15-5-5L5 21" /></Icon>;
+const CheckIcon = (p) => <Icon {...p}><path d="M20 6 9 17l-5-5" /></Icon>;
+const ChevronDownIcon = (p) => <Icon {...p}><path d="m6 9 6 6 6-6" /></Icon>;
+const MessageCircleIcon = (p) => <Icon {...p}><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z" /></Icon>;
+
 function Chat({ username, onLogout }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
@@ -91,7 +126,7 @@ function Chat({ username, onLogout }) {
   // ===== NARROW/MOBILE DETECTION — the single switch between "list always visible"
   // (wide browser) and "list is a drawer you open by click/drag" (narrow browser or
   // phone). Stays in sync as the window is resized/minimized. =====
-  const [isMobile, setIsMobile] = useState(() => (typeof window !== 'undefined' ? window.innerWidth <= 768 : false));
+  const [isMobile, setIsMobile] = useState(() => (typeof window !== 'undefined' ? window.innerWidth < 768 : false));
 
   // ===== NAVIGATION STATE =====
   const [activeRoom, setActiveRoom] = useState(null); // null | 'general' | 'dm'
@@ -133,11 +168,56 @@ function Chat({ username, onLogout }) {
   const cropPinchStartRef = useRef({ distance: 0, zoom: 1 });
   const cropDragStartRef = useRef({ x: 0, y: 0, posX: 0, posY: 0 });
 
+  // ===== TABLET ICON-RAIL BREAKPOINT (768–1023px) — sits between the always-
+  // visible desktop sidebar and the mobile off-canvas drawer. =====
+  const [isTablet, setIsTablet] = useState(() => (typeof window !== 'undefined' ? window.innerWidth >= 768 && window.innerWidth < 1024 : false));
+
+  // ===== NOTIFICATION PREFERENCES — persisted to localStorage per user since
+  // the backend has no settings endpoint. =====
+  const [notifSettings, setNotifSettings] = useState(() => {
+    try {
+      const raw = localStorage.getItem(`notif_settings_${username}`);
+      if (raw) return JSON.parse(raw);
+    } catch (err) {}
+    return { desktop: true, sound: true, notifyFor: 'all', dndEnabled: false, dndStart: '22:00', dndEnd: '07:00' };
+  });
+  const [showSettingsPanel, setShowSettingsPanel] = useState(false);
+
+  // ===== PER-CONVERSATION MUTE =====
+  const [mutedRooms, setMutedRooms] = useState(() => {
+    try {
+      const raw = localStorage.getItem(`muted_rooms_${username}`);
+      if (raw) return JSON.parse(raw);
+    } catch (err) {}
+    return {};
+  });
+  const [showConvoMenu, setShowConvoMenu] = useState(false);
+
+  // ===== READ-STATE TRACKING (for the "N new messages" divider + jump pill) =====
+  const [lastReadAt, setLastReadAt] = useState({});
+  const [scrolledUp, setScrolledUp] = useState(false);
+  const [newSinceScroll, setNewSinceScroll] = useState(0);
+  const [unreadBoundaryCount, setUnreadBoundaryCount] = useState({});
+
+  // ===== TOASTS (inactive-conversation message previews) =====
+  const [toasts, setToasts] = useState([]);
+  const toastIdRef = useRef(0);
+
+  // ===== NOTIFICATION CENTER (replies to you + mentions, derived client-side) =====
+  const [notifCenterItems, setNotifCenterItems] = useState([]);
+  const [showNotifCenter, setShowNotifCenter] = useState(false);
+
+  // ===== BROWSER NOTIFICATION PERMISSION BANNER =====
+  const [showPermissionBanner, setShowPermissionBanner] = useState(false);
+  const permissionAskedRef = useRef(false);
+  const notifTagCountRef = useRef({});
+
   const messagesEndRef = useRef(null);
   const typingTimeoutRef = useRef(null);
   const searchInputRef = useRef(null);
   const fileInputRef = useRef(null);
   const sidebarRef = useRef(null);
+  const messagesAreaRef = useRef(null);
   const dragState = useRef({ startX: 0, startY: 0, currentX: 0, dragging: false, horizontal: false });
 
   const REACTIONS = ['👍', '❤️', '😂', '😮', '😢'];
@@ -175,9 +255,13 @@ function Chat({ username, onLogout }) {
     return () => { window.removeEventListener('focus', onFocus); window.removeEventListener('blur', onBlur); };
   }, []);
 
-  // ===== KEEP isMobile IN SYNC WITH ACTUAL VIEWPORT (resize / rotate / browser minimize) =====
+  // ===== KEEP isMobile / isTablet IN SYNC WITH ACTUAL VIEWPORT (resize / rotate / browser minimize) =====
   useEffect(() => {
-    const onResize = () => setIsMobile(window.innerWidth <= 768);
+    const onResize = () => {
+      setIsMobile(window.innerWidth < 768);
+      setIsTablet(window.innerWidth >= 768 && window.innerWidth < 1024);
+    };
+    onResize();
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
   }, []);
@@ -308,6 +392,7 @@ function Chat({ username, onLogout }) {
     setActiveDMUser(targetUser);
     setActiveRoom('dm');
     await fetchDMMessages(roomId);
+    setUnreadBoundaryCount(prev => ({ ...prev, [roomId]: unreadDMs[roomId] || 0 }));
     setUnreadDMs(prev => ({ ...prev, [roomId]: 0 }));
   };
 
@@ -388,8 +473,16 @@ function Chat({ username, onLogout }) {
 
     socket.on('message', (msg) => {
       setMessages(prev => [...prev, { ...msg, reactions: {} }]);
-      if ((!isTabFocused || activeRoom !== 'general') && msg.username !== username) {
-        setUnreadCount(prev => prev + 1);
+      if (msg.username !== username) {
+        const isActive = activeRoom === 'general' && isTabFocused && document.visibilityState === 'visible';
+        if (!isActive) setUnreadCount(prev => prev + 1);
+        if (!isActive && shouldNotifyFor('general', msg)) {
+          const preview = msg.text?.startsWith('__IMAGE__') ? '🖼️ Photo' : msg.text?.startsWith('__FILE__') ? '📎 File' : msg.text;
+          pushToast({ sender: msg.username, preview, roomKey: 'general', target: () => { setActiveRoom('general'); setActiveDMUser(null); } });
+          pushNotifCenterItem({ type: 'message', sender: msg.username, preview, roomKey: 'general', target: () => { setActiveRoom('general'); setActiveDMUser(null); } });
+          if (notifSettings.sound) playNotifSound();
+          fireBrowserNotification('general', msg.username, preview, () => { setActiveRoom('general'); setActiveDMUser(null); });
+        }
       }
     });
 
@@ -404,6 +497,13 @@ function Chat({ username, onLogout }) {
       if (roomId !== currentRoomId || activeRoom !== 'dm') {
         if (msg.username !== username) {
           setUnreadDMs(prev => ({ ...prev, [roomId]: (prev[roomId] || 0) + 1 }));
+          if (shouldNotifyFor(roomId, msg)) {
+            const preview = msg.text?.startsWith('__IMAGE__') ? '🖼️ Photo' : msg.text?.startsWith('__FILE__') ? '📎 File' : msg.text;
+            pushToast({ sender: msg.username, preview, roomKey: roomId, target: () => openDM(msg.username) });
+            pushNotifCenterItem({ type: 'dm', sender: msg.username, preview, roomKey: roomId, target: () => openDM(msg.username) });
+            if (notifSettings.sound) playNotifSound();
+            fireBrowserNotification(roomId, msg.username, preview, () => openDM(msg.username));
+          }
         }
       }
     });
@@ -450,9 +550,54 @@ function Chat({ username, onLogout }) {
     };
   }, [username, isTabFocused, activeDMUser, activeRoom, currentRoomId]);
 
+  // ===== SCROLL TRACKING — only auto-scroll to bottom if the user hasn't
+  // deliberately scrolled up; otherwise surface the "↓ N new messages" jump pill. =====
+  const prevMsgCountRef = useRef(0);
+  const prevRoomIdRef = useRef(null);
+
+  useEffect(() => {
+    if (currentRoomId !== prevRoomIdRef.current) {
+      prevRoomIdRef.current = currentRoomId;
+      prevMsgCountRef.current = currentMessages.length;
+      setScrolledUp(false);
+      setNewSinceScroll(0);
+      return;
+    }
+    const len = currentMessages.length;
+    if (len > prevMsgCountRef.current) {
+      if (scrolledUp) {
+        setNewSinceScroll(n => n + (len - prevMsgCountRef.current));
+      } else {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      }
+    }
+    prevMsgCountRef.current = len;
+  }, [currentMessages, currentRoomId, scrolledUp]);
+
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [currentMessages, typingUsers]);
+  }, [typingUsers]);
+
+  const handleMessagesScroll = () => {
+    const el = messagesAreaRef.current;
+    if (!el) return;
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    const nowScrolledUp = distanceFromBottom > 150;
+    setScrolledUp(nowScrolledUp);
+    if (!nowScrolledUp) {
+      setNewSinceScroll(0);
+      if (currentRoomId) {
+        setUnreadBoundaryCount(prev => (prev[currentRoomId] ? { ...prev, [currentRoomId]: 0 } : prev));
+        markRoomRead(currentRoomId);
+      }
+    }
+  };
+
+  const jumpToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    setNewSinceScroll(0);
+    setScrolledUp(false);
+  };
 
   useEffect(() => {
     if (showSearch && searchInputRef.current) searchInputRef.current.focus();
@@ -491,6 +636,7 @@ function Chat({ username, onLogout }) {
 
   const sendMessage = (e) => {
     e.preventDefault();
+    maybeShowPermissionBanner();
     setSendPulse(true);
     setTimeout(() => setSendPulse(false), 300);
     if (imageFile) { sendImageMessage(); return; }
@@ -818,6 +964,137 @@ function Chat({ username, onLogout }) {
     localStorage.removeItem(`chat_activeRoom_${username}`);
     localStorage.removeItem(`chat_activeDMUser_${username}`);
     onLogout();
+  };
+
+  // ===== NOTIFICATION SYSTEM =====
+
+  // Refs mirroring the latest settings/mutes so the long-lived socket handlers
+  // (wired once per connection) always read current values, not stale closures.
+  const notifSettingsRef = useRef(notifSettings);
+  const mutedRoomsRef = useRef(mutedRooms);
+  useEffect(() => { notifSettingsRef.current = notifSettings; }, [notifSettings]);
+  useEffect(() => { mutedRoomsRef.current = mutedRooms; }, [mutedRooms]);
+
+  // Persist preferences/mutes whenever they change.
+  useEffect(() => {
+    try { localStorage.setItem(`notif_settings_${username}`, JSON.stringify(notifSettings)); } catch (err) {}
+  }, [notifSettings, username]);
+  useEffect(() => {
+    try { localStorage.setItem(`muted_rooms_${username}`, JSON.stringify(mutedRooms)); } catch (err) {}
+  }, [mutedRooms, username]);
+
+  // Live document.title prefix — "(3) Nalantamil" while unread, cleared on focus.
+  useEffect(() => {
+    const total = unreadCount + totalUnreadDMs;
+    document.title = total > 0 ? `(${total}) Nalantamil` : 'Nalantamil';
+  }, [unreadCount, totalUnreadDMs]);
+  useEffect(() => {
+    const onFocusClearTitle = () => { document.title = 'Nalantamil'; };
+    window.addEventListener('focus', onFocusClearTitle);
+    return () => window.removeEventListener('focus', onFocusClearTitle);
+  }, []);
+
+  const isWithinDnd = () => {
+    const s = notifSettingsRef.current;
+    if (!s.dndEnabled) return false;
+    const now = new Date();
+    const [sh, sm] = s.dndStart.split(':').map(Number);
+    const [eh, em] = s.dndEnd.split(':').map(Number);
+    const cur = now.getHours() * 60 + now.getMinutes();
+    const start = sh * 60 + sm;
+    const end = eh * 60 + em;
+    if (start === end) return false;
+    if (start < end) return cur >= start && cur < end;
+    return cur >= start || cur < end; // wraps past midnight
+  };
+
+  // Quiet, short notification beep via Web Audio — no external asset needed.
+  const playNotifSound = () => {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = 720;
+      gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.12, ctx.currentTime + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.18);
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.start(); osc.stop(ctx.currentTime + 0.2);
+      setTimeout(() => ctx.close(), 400);
+    } catch (err) {}
+  };
+
+  // Whether a message in roomKey should generate a notification (toast/sound/browser),
+  // given mute state, DND, and the "Notify for" preference.
+  const shouldNotifyFor = (roomKey, msg) => {
+    if (mutedRoomsRef.current[roomKey]) return false;
+    if (isWithinDnd()) return false;
+    const notifyFor = notifSettingsRef.current.notifyFor;
+    if (notifyFor === 'none') return false;
+    if (notifyFor === 'mentions') {
+      const mentioned = msg.text?.includes('@' + username);
+      const repliedToMe = msg.reply_to?.username === username;
+      return mentioned || repliedToMe;
+    }
+    return true;
+  };
+
+  const markRoomRead = (roomKey) => {
+    setLastReadAt(prev => ({ ...prev, [roomKey]: Date.now() }));
+  };
+
+  const pushToast = ({ avatar, avatarColor, sender, preview, roomKey, target }) => {
+    const id = ++toastIdRef.current;
+    setToasts(prev => {
+      const next = [...prev, { id, avatar, avatarColor, sender, preview, roomKey, target }];
+      return next.length > 3 ? next.slice(next.length - 3) : next;
+    });
+    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 5000);
+  };
+
+  const pushNotifCenterItem = (item) => {
+    setNotifCenterItems(prev => [{ id: Date.now() + Math.random(), read: false, ...item }, ...prev].slice(0, 30));
+  };
+
+  // Requests Notification permission — called lazily on first message SEND
+  // (never on page load). Shows a dismissible inline banner first instead of
+  // triggering the bare browser popup immediately.
+  const maybeShowPermissionBanner = () => {
+    if (permissionAskedRef.current) return;
+    if (!('Notification' in window)) return;
+    if (!notifSettings.desktop) return;
+    if (Notification.permission !== 'default') return;
+    permissionAskedRef.current = true;
+    setShowPermissionBanner(true);
+  };
+
+  const enableDesktopNotifs = async () => {
+    setShowPermissionBanner(false);
+    try {
+      if ('Notification' in window) await Notification.requestPermission();
+    } catch (err) {}
+  };
+
+  // Fires a real Web Notification only when the tab is hidden/unfocused, and
+  // coalesces rapid messages from the same sender into one (via `tag`).
+  const fireBrowserNotification = (roomKey, senderUsername, body, onClickNavigate) => {
+    if (!notifSettingsRef.current.desktop) return;
+    if (!('Notification' in window) || Notification.permission !== 'granted') return;
+    const isHiddenOrUnfocused = document.visibilityState === 'hidden' || !document.hasFocus();
+    if (!isHiddenOrUnfocused) return;
+    const tag = `msg-${roomKey}-${senderUsername}`;
+    notifTagCountRef.current[tag] = (notifTagCountRef.current[tag] || 0) + 1;
+    const count = notifTagCountRef.current[tag];
+    const n = new Notification(count > 1 ? `${senderUsername} (${count} new messages)` : senderUsername, {
+      body, tag, renotify: true,
+    });
+    n.onclick = () => {
+      window.focus();
+      onClickNavigate();
+      n.close();
+      notifTagCountRef.current[tag] = 0;
+    };
   };
 
   // ===== DRAWER DRAG GESTURES (Pointer Events — mouse on desktop, finger on mobile).
@@ -1176,9 +1453,8 @@ function Chat({ username, onLogout }) {
 
         .sidebar-logo { padding: 16px 16px 12px; border-bottom: 1px solid rgba(255,255,255,0.05); position: relative; z-index: 1; }
         .logo-row { display: flex; align-items: center; gap: 10px; }
-        .logo-emoji { font-size: 22px; filter: drop-shadow(0 0 8px rgba(99,102,241,0.9)); cursor: pointer; transition: transform 0.3s; }
-        .logo-emoji:hover { transform: scale(1.2) rotate(10deg); }
-        .logo-name { font-size: 16px; font-weight: 700; letter-spacing: -0.02em; background: linear-gradient(135deg, #818cf8, #c4b5fd); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+        .brand-mark { width: 28px; height: 28px; border-radius: 8px; background: #6366f1; color: white; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+        .logo-name { font-size: 16px; font-weight: 700; letter-spacing: -0.02em; color: #f1f5f9; }
 
         .sidebar-search-wrap { margin: 12px 12px 8px; position: relative; z-index: 1; }
         .sidebar-search-icon { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: #334155; font-size: 13px; pointer-events: none; }
@@ -1475,10 +1751,9 @@ function Chat({ username, onLogout }) {
         .typing-dot:nth-child(3) { animation-delay: 0.4s; }
 
         .empty-chat { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; }
-        .empty-icon { font-size: 58px; animation: float 3s ease-in-out infinite; filter: drop-shadow(0 0 18px rgba(99,102,241,0.4)); }
+        .empty-icon { display: flex; align-items: center; justify-content: center; color: rgba(99,102,241,0.5); animation: float 3s ease-in-out infinite; }
         .empty-title { font-size: 19px; font-weight: 700; color: rgba(255,255,255,0.45); }
         .empty-sub { font-size: 12px; color: rgba(255,255,255,0.22); }
-        .empty-hint { font-size: 11px; color: rgba(99,102,241,0.55); background: rgba(99,102,241,0.09); border: 1px solid rgba(99,102,241,0.18); padding: 6px 13px; border-radius: 20px; animation: pulse 3s ease-in-out infinite; }
 
         .input-area { padding: 12px 16px; background: rgba(13,13,26,0.95); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border-top: 1px solid rgba(255,255,255,0.06); position: relative; }
 
@@ -1648,6 +1923,7 @@ function Chat({ username, onLogout }) {
           padding: 10px 28px; border-radius: 10px; border: none;
           color: white; font-weight: 600; font-size: 14px; cursor: pointer;
           transition: all 200ms;
+          display: inline-flex; align-items: center; gap: 6px;
         }
         .pm-save-btn:hover { filter: brightness(1.1); box-shadow: 0 6px 20px rgba(99,102,241,0.4); transform: scale(1.02); }
         .pm-save-btn:active { transform: scale(0.98); }
@@ -1798,6 +2074,32 @@ function Chat({ username, onLogout }) {
         </div>
       )}
 
+      {/* ===== TOASTS — inactive-conversation message previews, max 3 stacked, auto-dismiss 5s ===== */}
+      {toasts.length > 0 && (
+        <div className="toast-stack">
+          {toasts.map(t => (
+            <div key={t.id} className="toast-item" onClick={() => { t.target(); setToasts(prev => prev.filter(x => x.id !== t.id)); }}>
+              <div className="toast-avatar">{getInitial(t.sender)}</div>
+              <div className="toast-body">
+                <div className="toast-sender">{t.sender}</div>
+                <div className="toast-preview">{t.preview}</div>
+              </div>
+              <button className="toast-close" onClick={(e) => { e.stopPropagation(); setToasts(prev => prev.filter(x => x.id !== t.id)); }}><XIcon size={14} /></button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ===== BROWSER NOTIFICATION PERMISSION BANNER — shown once, on first send ===== */}
+      {showPermissionBanner && (
+        <div className="permission-banner">
+          <BellIcon size={16} />
+          <span>Enable desktop notifications for new messages?</span>
+          <button className="permission-btn-enable" onClick={enableDesktopNotifs}>Enable</button>
+          <button className="permission-btn-dismiss" onClick={() => setShowPermissionBanner(false)}><XIcon size={14} /></button>
+        </div>
+      )}
+
       {lightboxImage && (
         <div className="lightbox-overlay" onClick={() => setLightboxImage(null)}>
           <button className="lightbox-close" onClick={() => setLightboxImage(null)}>✕</button>
@@ -1808,13 +2110,13 @@ function Chat({ username, onLogout }) {
       {showLockModal === 'verify' && (
         <div className="lock-overlay">
           <div className="lock-modal">
-            <div className="lock-icon">🔒</div>
+            <div className="lock-icon"><LockIcon size={40} /></div>
             <div className="lock-title">This chat is locked</div>
             <div className="lock-sub">Enter password to open chat with {activeDMUser}</div>
             <input className="lock-input" type="password" placeholder="••••••••"
               value={lockVerifyPassword} onChange={(e) => setLockVerifyPassword(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && verifyLock()} />
-            <button className="lock-btn lock-btn-primary" onClick={verifyLock}>🔓 Unlock</button>
+            <button className="lock-btn lock-btn-primary" onClick={verifyLock}><LockOpenIcon size={15} /> Unlock</button>
             <button className="lock-btn lock-btn-cancel" onClick={() => { setShowLockModal(false); setActiveDMUser(null); setActiveRoom(null); }}>Cancel</button>
           </div>
         </div>
@@ -1823,13 +2125,13 @@ function Chat({ username, onLogout }) {
       {showLockModal === 'set' && (
         <div className="lock-overlay">
           <div className="lock-modal">
-            <div className="lock-icon">🔐</div>
+            <div className="lock-icon"><LockIcon size={40} /></div>
             <div className="lock-title">Lock this chat</div>
             <div className="lock-sub">Set a password for your chat with {activeDMUser}</div>
             <input className="lock-input" type="password" placeholder="Enter password"
               value={lockPassword} onChange={(e) => setLockPassword(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && setLock()} />
-            <button className="lock-btn lock-btn-primary" onClick={setLock}>🔒 Set Lock</button>
+            <button className="lock-btn lock-btn-primary" onClick={setLock}><LockIcon size={15} /> Set Lock</button>
             <button className="lock-btn lock-btn-cancel" onClick={() => setShowLockModal(false)}>Cancel</button>
           </div>
         </div>
@@ -1840,10 +2142,10 @@ function Chat({ username, onLogout }) {
           <div className="profile-modal">
             <div className="pm-header">
               <div className="pm-header-left">
-                <span className="pm-header-icon">⚙️</span>
+                <span className="pm-header-icon"><SettingsIcon size={16} /></span>
                 <span>Profile Settings</span>
               </div>
-              <button className="pm-close-btn" onClick={() => setShowProfile(false)}>×</button>
+              <button className="pm-close-btn" onClick={() => setShowProfile(false)}><XIcon size={16} /></button>
             </div>
 
             <div className="pm-body">
@@ -1891,7 +2193,7 @@ function Chat({ username, onLogout }) {
             <div className="pm-footer">
               <span className="pm-footer-note">Changes save to your account</span>
               <button className="pm-save-btn" onClick={saveProfile} disabled={profileSaving}>
-                {profileSaving ? '⏳ Saving...' : '💾 Save Changes'}
+                {profileSaving ? 'Saving...' : (<><SaveIcon size={15} /> Save Changes</>)}
               </button>
             </div>
             {profileMsg && <div className="pm-msg">{profileMsg}</div>}
@@ -1952,6 +2254,59 @@ function Chat({ username, onLogout }) {
         </div>
       )}
 
+      {showSettingsPanel && (
+        <div className="profile-overlay" onClick={(e) => e.target === e.currentTarget && setShowSettingsPanel(false)}>
+          <div className="settings-modal">
+            <div className="pm-header">
+              <div className="pm-header-left"><SettingsIcon size={16} /><span>Notification Settings</span></div>
+              <button className="pm-close-btn" onClick={() => setShowSettingsPanel(false)}><XIcon size={18} /></button>
+            </div>
+            <div className="settings-body">
+              <div className="settings-row">
+                <div className="settings-row-label"><BellIcon size={16} /> Desktop notifications</div>
+                <button className={`settings-toggle ${notifSettings.desktop ? 'on' : ''}`}
+                  onClick={() => setNotifSettings(prev => ({ ...prev, desktop: !prev.desktop }))}><span className="settings-toggle-knob" /></button>
+              </div>
+              <div className="settings-row">
+                <div className="settings-row-label"><Volume2Icon size={16} /> Sound</div>
+                <button className={`settings-toggle ${notifSettings.sound ? 'on' : ''}`}
+                  onClick={() => setNotifSettings(prev => ({ ...prev, sound: !prev.sound }))}><span className="settings-toggle-knob" /></button>
+              </div>
+              <div className="settings-divider" />
+              <div className="settings-row-label" style={{ marginBottom: '8px' }}>Notify for</div>
+              <div className="settings-radio-group">
+                {[['all', 'All messages'], ['mentions', 'Mentions only'], ['none', 'Nothing']].map(([val, label]) => (
+                  <button key={val} className={`settings-radio ${notifSettings.notifyFor === val ? 'selected' : ''}`}
+                    onClick={() => setNotifSettings(prev => ({ ...prev, notifyFor: val }))}>
+                    {notifSettings.notifyFor === val && <CheckIcon size={13} />} {label}
+                  </button>
+                ))}
+              </div>
+              <div className="settings-divider" />
+              <div className="settings-row">
+                <div className="settings-row-label"><BellOffIcon size={16} /> Do Not Disturb</div>
+                <button className={`settings-toggle ${notifSettings.dndEnabled ? 'on' : ''}`}
+                  onClick={() => setNotifSettings(prev => ({ ...prev, dndEnabled: !prev.dndEnabled }))}><span className="settings-toggle-knob" /></button>
+              </div>
+              {notifSettings.dndEnabled && (
+                <div className="settings-dnd-times">
+                  <div>
+                    <label className="pm-field-label">From</label>
+                    <input type="time" className="pm-input" value={notifSettings.dndStart}
+                      onChange={(e) => setNotifSettings(prev => ({ ...prev, dndStart: e.target.value }))} />
+                  </div>
+                  <div>
+                    <label className="pm-field-label">To</label>
+                    <input type="time" className="pm-input" value={notifSettings.dndEnd}
+                      onChange={(e) => setNotifSettings(prev => ({ ...prev, dndEnd: e.target.value }))} />
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="chat-layout">
         {isMobile && sidebarOpen && (
           <div className="mobile-drawer-overlay" onClick={() => setSidebarOpen(false)}></div>
@@ -1978,7 +2333,7 @@ function Chat({ username, onLogout }) {
         >
           <div className="sidebar-logo">
             <div className="logo-row">
-              <span className="logo-emoji">💬</span>
+              <span className="brand-mark"><HashIcon size={16} /></span>
               <span className="logo-name">Nalantamil</span>
             </div>
           </div>
@@ -1997,8 +2352,8 @@ function Chat({ username, onLogout }) {
             <span>Channels</span>
           </div>
           <div className={`channel-item ${activeRoom === 'general' ? 'active' : ''}`}
-            onClick={() => { setActiveRoom('general'); setActiveDMUser(null); setUnreadCount(0); }}>
-            <span className="channel-icon">🌐</span>
+            onClick={() => { setActiveRoom('general'); setActiveDMUser(null); setUnreadBoundaryCount(prev => ({ ...prev, general: unreadCount })); setUnreadCount(0); }}>
+            <span className="channel-icon"><HashIcon size={16} /></span>
             <div className="channel-info">
               <div className="channel-name"># general</div>
               <div className="channel-sub">Everyone is here</div>
@@ -2043,7 +2398,7 @@ function Chat({ username, onLogout }) {
                       {lastPreview || 'Click to chat'}
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
-                      {isLocked && <span className="dm-lock-icon">🔒</span>}
+                      {isLocked && <span className="dm-lock-icon"><LockIcon size={11} /></span>}
                       {unread > 0 && (
                         <div style={{ background: '#10b981', color: 'white', fontSize: '10px', fontWeight: '800', minWidth: '18px', height: '18px', borderRadius: '9px', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 4px', boxShadow: '0 0 6px rgba(16,185,129,0.6)' }}>
                           {unread}
@@ -2067,8 +2422,8 @@ function Chat({ username, onLogout }) {
               <div className="user-name">{username}</div>
               <div className="user-status">{profile.bio || '● Online'}</div>
             </div>
-            <button className="icon-btn profile-icon-btn ripple-btn" onClick={() => setShowProfile(true)}>⚙️</button>
-            <button className="icon-btn logout-icon-btn ripple-btn" onClick={handleLogoutClick}>⏻</button>
+            <button className="icon-btn profile-icon-btn ripple-btn" title="Profile settings" onClick={() => setShowProfile(true)}><SettingsIcon size={16} /></button>
+            <button className="icon-btn logout-icon-btn ripple-btn" title="Log out" onClick={handleLogoutClick}><LogOutIcon size={16} /></button>
           </div>
         </div>
 
@@ -2085,15 +2440,17 @@ function Chat({ username, onLogout }) {
                     <span className="mobile-menu-bars"><span></span><span></span><span></span></span>
                   </button>
                   <div className="chat-header-info">
-                    <div className="chat-header-name">💬 Nalantamil</div>
+                    <div className="chat-header-name" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span className="brand-mark"><HashIcon size={14} /></span> Nalantamil
+                    </div>
                   </div>
                 </div>
               )}
               <div className="welcome-screen">
-                <div className="welcome-icon-circle">💬</div>
+                <div className="welcome-icon-circle"><MessageCircleIcon size={44} /></div>
                 <div className="welcome-title">Nalantamil Web</div>
                 <div className="welcome-sub">Select a channel or a person from the list to start chatting. Your messages sync in real time.</div>
-                <div className="welcome-note">🔒 Private chats can be locked with a password.</div>
+                <div className="welcome-note"><LockIcon size={13} /> Private chats can be locked with a password.</div>
               </div>
             </>
           ) : (
@@ -2112,7 +2469,7 @@ function Chat({ username, onLogout }) {
                   </button>
                 )}
                 <div className="chat-header-avatar">
-                  {activeRoom === 'general' ? '🌐' : (() => {
+                  {activeRoom === 'general' ? <HashIcon size={18} /> : (() => {
                     const dmUser = allUsers.find(u => u.username === activeDMUser);
                     return dmUser?.avatar_url
                       ? <img src={dmUser.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '9px' }} />
@@ -2121,7 +2478,7 @@ function Chat({ username, onLogout }) {
                 </div>
                 <div className="chat-header-info">
                   <div className="chat-header-name">
-                    {activeRoom === 'general' ? '# general' : `💬 ${activeDMUser}`}
+                    {activeRoom === 'general' ? 'general' : activeDMUser}
                   </div>
                   <div className="chat-header-status">
                     <span className="status-dot" style={{ background: isConnected ? '#10b981' : '#ef4444' }}></span>
@@ -2141,17 +2498,42 @@ function Chat({ username, onLogout }) {
                       }
                     }}
                     title={chatLocks[currentRoomId]?.locked ? 'Locked' : 'Lock Chat'}>
-                    {chatLocks[currentRoomId]?.locked ? '🔒' : '🔓'}
+                    {chatLocks[currentRoomId]?.locked ? <LockIcon size={16} /> : <LockOpenIcon size={16} />}
                   </button>
                 )}
 
-                <button className={`header-btn ripple-btn ${showSearch ? 'active' : ''}`}
-                  onClick={() => { setShowSearch(!showSearch); setSearchQuery(''); }}>🔍</button>
+                <button className={`header-btn ripple-btn ${showSearch ? 'active' : ''}`} title="Search messages"
+                  onClick={() => { setShowSearch(!showSearch); setSearchQuery(''); }}><SearchIcon size={16} /></button>
                 {activeRoom === 'general' && (
-                  <button className={`header-btn ripple-btn ${showPinned ? 'active' : ''}`}
-                    onClick={() => setShowPinned(!showPinned)}>📌</button>
+                  <button className={`header-btn ripple-btn ${showPinned ? 'active' : ''}`} title="Pinned messages"
+                    onClick={() => setShowPinned(!showPinned)}><PinIcon size={16} /></button>
                 )}
-                <button className="header-btn ripple-btn" onClick={() => setShowBgPicker(!showBgPicker)}>🎨</button>
+                <button className="header-btn ripple-btn" title="Background" onClick={() => setShowBgPicker(!showBgPicker)}><PaletteIcon size={16} /></button>
+
+                <div style={{ position: 'relative' }}>
+                  <button className={`header-btn ripple-btn ${showNotifCenter ? 'active' : ''}`} title="Notifications"
+                    onClick={() => setShowNotifCenter(!showNotifCenter)}>
+                    <BellIcon size={16} />
+                    {notifCenterItems.some(n => !n.read) && <span className="header-btn-dot"></span>}
+                  </button>
+                </div>
+
+                <div style={{ position: 'relative' }}>
+                  <button className="header-btn ripple-btn" title="More options" onClick={() => setShowConvoMenu(!showConvoMenu)}>
+                    <MoreVerticalIcon size={16} />
+                  </button>
+                  {showConvoMenu && currentRoomId && (
+                    <div className="convo-menu-dropdown">
+                      <button className="convo-menu-item" onClick={() => {
+                        setMutedRooms(prev => ({ ...prev, [currentRoomId]: !prev[currentRoomId] }));
+                        setShowConvoMenu(false);
+                      }}>
+                        {mutedRooms[currentRoomId] ? <Volume2Icon size={15} /> : <VolumeXIcon size={15} />}
+                        {mutedRooms[currentRoomId] ? 'Unmute conversation' : 'Mute conversation'}
+                      </button>
+                    </div>
+                  )}
+                </div>
 
                 {showBgPicker && (
                   <div className="bg-picker-dropdown">
@@ -2162,6 +2544,32 @@ function Chat({ username, onLogout }) {
                           style={{ background: bg.value }}
                           onClick={() => { setSelectedBg(bg); setShowBgPicker(false); }}>
                           {bg.label}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {showNotifCenter && (
+                  <div className="notif-center-panel">
+                    <div className="notif-center-header">
+                      <span>Notifications</span>
+                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                        <button className="notif-center-settings-btn" title="Notification settings" onClick={() => { setShowSettingsPanel(true); setShowNotifCenter(false); }}><SettingsIcon size={14} /></button>
+                        <button className="notif-center-mark-read" onClick={() => setNotifCenterItems(prev => prev.map(n => ({ ...n, read: true })))}>Mark all read</button>
+                      </div>
+                    </div>
+                    <div className="notif-center-list">
+                      {notifCenterItems.length === 0 ? (
+                        <div className="notif-center-empty">No notifications yet</div>
+                      ) : notifCenterItems.map(n => (
+                        <div key={n.id} className={`notif-center-item ${n.read ? '' : 'unread'}`}
+                          onClick={() => { n.target(); setNotifCenterItems(prev => prev.map(x => x.id === n.id ? { ...x, read: true } : x)); setShowNotifCenter(false); }}>
+                          <div className="notif-center-avatar">{getInitial(n.sender)}</div>
+                          <div className="notif-center-body">
+                            <div className="notif-center-sender">{n.sender}</div>
+                            <div className="notif-center-preview">{n.preview}</div>
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -2197,15 +2605,14 @@ function Chat({ username, onLogout }) {
                 </div>
               )}
 
-              <div className="messages-area">
+              <div className="messages-area" ref={messagesAreaRef} onScroll={handleMessagesScroll}>
                 {filteredMessages.length === 0 && searchQuery ? (
                   <div className="no-results">🔍 No messages found for "<strong>{searchQuery}</strong>"</div>
                 ) : filteredMessages.length === 0 ? (
                   <div className="empty-chat">
-                    <span className="empty-icon">{activeRoom === 'general' ? '💬' : '🔐'}</span>
+                    <span className="empty-icon">{activeRoom === 'general' ? <MessageCircleIcon size={48} /> : <LockIcon size={48} />}</span>
                     <div className="empty-title">{activeRoom === 'general' ? 'No messages yet' : `Chat with ${activeDMUser}`}</div>
                     <div className="empty-sub">{activeRoom === 'general' ? 'Be the first to say hello!' : 'Your messages are private'}</div>
-                    <div className="empty-hint">{activeRoom === 'general' ? '✨ Send a message below' : '🔒 You can lock this chat for privacy'}</div>
                   </div>
                 ) : (
                   filteredMessages.map((msg, index) => {
@@ -2224,8 +2631,20 @@ function Chat({ username, onLogout }) {
                     const isFirstInGroup = !groupedWithPrev;
                     const isLastInGroup = !groupedWithNext;
 
+                    const boundary = !searchQuery && unreadBoundaryCount[currentRoomId] > 0
+                      ? filteredMessages.length - unreadBoundaryCount[currentRoomId]
+                      : -1;
+                    const showUnreadDivider = index === boundary && boundary > 0;
+
                     return (
                       <React.Fragment key={msg._id || index}>
+                        {showUnreadDivider && (
+                          <div className="unread-divider">
+                            <span className="unread-divider-line"></span>
+                            <span className="unread-divider-label">{unreadBoundaryCount[currentRoomId]} new message{unreadBoundaryCount[currentRoomId] > 1 ? 's' : ''}</span>
+                            <span className="unread-divider-line"></span>
+                          </div>
+                        )}
                         {showDate && msg.timestamp && (
                           <div className="date-separator">
                             <div className="date-separator-line"></div>
@@ -2377,6 +2796,12 @@ function Chat({ username, onLogout }) {
                 )}
                 <div ref={messagesEndRef} />
               </div>
+
+              {scrolledUp && newSinceScroll > 0 && (
+                <button className="jump-pill" onClick={jumpToBottom}>
+                  <ChevronDownIcon size={14} /> {newSinceScroll} new message{newSinceScroll > 1 ? 's' : ''}
+                </button>
+              )}
 
               <div className="input-area">
                 {replyingTo && (
