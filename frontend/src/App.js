@@ -1,22 +1,60 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
+import { z } from 'zod';
+import {
+  User, Lock, Eye, EyeOff, ArrowRight, Check, Circle, AlertCircle, Loader2, MessageCircle,
+} from 'lucide-react';
 import Chat from './Chat';
+
+// ===== VALIDATION SCHEMAS =====
+const loginSchema = z.object({
+  username: z.string().trim().min(1, 'Username is required').max(20, 'Too long'),
+  password: z.string().min(1, 'Password is required').max(72, 'Too long'),
+});
+
+const signupSchema = z.object({
+  username: z.string().trim()
+    .min(3, '3–20 characters · letters, numbers, underscore')
+    .max(20, '3–20 characters · letters, numbers, underscore')
+    .regex(/^[A-Za-z0-9_]+$/, '3–20 characters · letters, numbers, underscore'),
+  password: z.string().min(8, 'At least 8 characters').max(72, 'Too long'),
+});
+
+function getPasswordChecks(pwd) {
+  return {
+    length: pwd.length >= 8,
+    uppercase: /[A-Z]/.test(pwd),
+    number: /[0-9]/.test(pwd),
+    special: /[^A-Za-z0-9]/.test(pwd),
+  };
+}
+
+function getPasswordStrength(pwd) {
+  if (!pwd) return { label: '', level: 0 };
+  const checks = getPasswordChecks(pwd);
+  let score = Object.values(checks).filter(Boolean).length;
+  if (pwd.length >= 12) score++;
+  if (score <= 1) return { label: 'Weak', level: 1 };
+  if (score === 2) return { label: 'Fair', level: 2 };
+  if (score <= 4) return { label: 'Good', level: 3 };
+  return { label: 'Strong', level: 4 };
+}
 
 function App() {
   const [isLogin, setIsLogin] = useState(true);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [message, setMessage] = useState('');
-  const [isError, setIsError] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [focusedInput, setFocusedInput] = useState('');
   const [loggedInUser, setLoggedInUser] = useState(null);
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
   const [fieldErrors, setFieldErrors] = useState({ username: '', password: '' });
+  const [touched, setTouched] = useState({ username: false, password: false });
   const [forgotMsg, setForgotMsg] = useState('');
   const [loginSuccess, setLoginSuccess] = useState(false);
   const [errorAction, setErrorAction] = useState(null); // { label, onClick }
+  const [toast, setToast] = useState(null); // { message }
+  const toastTimeoutRef = useRef(null);
 
   // Load remembered username on mount
   useEffect(() => {
@@ -36,98 +74,97 @@ function App() {
     }
   }, []);
 
-  const getPasswordChecks = (pwd) => ({
-    length: pwd.length >= 8,
-    uppercase: /[A-Z]/.test(pwd),
-    number: /[0-9]/.test(pwd),
-    special: /[^A-Za-z0-9]/.test(pwd),
-  });
+  useEffect(() => () => clearTimeout(toastTimeoutRef.current), []);
 
-  const getPasswordStrength = (pwd) => {
-    if (!pwd) return { label: '', level: 0 };
-    const checks = getPasswordChecks(pwd);
-    let score = Object.values(checks).filter(Boolean).length;
-    if (pwd.length >= 12) score++;
-
-    if (score <= 1) return { label: 'Weak', level: 1 };
-    if (score === 2) return { label: 'Medium', level: 2 };
-    if (score <= 4) return { label: 'Strong', level: 3 };
-    return { label: 'Very Strong', level: 4 };
+  const showToast = (message) => {
+    setToast({ message });
+    clearTimeout(toastTimeoutRef.current);
+    toastTimeoutRef.current = setTimeout(() => setToast(null), 4500);
   };
 
   const passwordChecks = getPasswordChecks(password);
-
   const passwordStrength = getPasswordStrength(password);
+  const activeSchema = isLogin ? loginSchema : signupSchema;
 
-  const USERNAME_PATTERN = /^[A-Za-z0-9_]{3,20}$/;
+  const validateField = (name, value) => {
+    const fieldSchema = activeSchema.shape[name];
+    const result = fieldSchema.safeParse(value);
+    const msg = result.success ? '' : result.error.issues[0].message;
+    setFieldErrors(prev => ({ ...prev, [name]: msg }));
+    return msg === '';
+  };
 
-  const validateFields = () => {
+  const handleBlur = (name, value) => {
+    setTouched(prev => ({ ...prev, [name]: true }));
+    validateField(name, value);
+  };
+
+  const validateAll = () => {
+    setTouched({ username: true, password: true });
+    const result = activeSchema.safeParse({ username: username.trim().slice(0, 20), password: password.slice(0, 72) });
+    if (result.success) {
+      setFieldErrors({ username: '', password: '' });
+      return true;
+    }
     const errors = { username: '', password: '' };
-    let valid = true;
-
-    if (!username.trim()) {
-      errors.username = 'Username required';
-      valid = false;
-    } else if (!isLogin && !USERNAME_PATTERN.test(username.trim())) {
-      errors.username = '3-20 characters · letters, numbers, underscore only';
-      valid = false;
-    }
-
-    if (!password) {
-      errors.password = 'Password required';
-      valid = false;
-    } else if (!isLogin && password.length < 8) {
-      errors.password = 'Password must contain at least 8 characters';
-      valid = false;
-    }
-
+    result.error.issues.forEach(issue => {
+      const key = issue.path[0];
+      if (!errors[key]) errors[key] = issue.message;
+    });
     setFieldErrors(errors);
-    return valid;
+    return false;
+  };
+
+  const switchTab = (toLogin) => {
+    setIsLogin(toLogin);
+    setForgotMsg('');
+    setErrorAction(null);
+    setFieldErrors({ username: '', password: '' });
+    setTouched({ username: false, password: false });
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setMessage('');
     setForgotMsg('');
     setErrorAction(null);
 
-    if (!validateFields()) return;
+    if (!validateAll()) return;
 
     setLoading(true);
     const url = isLogin
       ? 'https://s-nalantamil-chat.onrender.com/login'
       : 'https://s-nalantamil-chat.onrender.com/signup';
     try {
-      const response = await axios.post(url, { username, password });
-      setIsError(false);
+      const response = await axios.post(url, { username: username.trim(), password });
       if (isLogin) {
         localStorage.setItem('token', response.data.token);
-        localStorage.setItem('authUsername', username);
+        localStorage.setItem('authUsername', username.trim());
         if (rememberMe) {
-          localStorage.setItem('rememberedUsername', username);
+          localStorage.setItem('rememberedUsername', username.trim());
         } else {
           localStorage.removeItem('rememberedUsername');
         }
         setLoading(false);
         setLoginSuccess(true);
-        setTimeout(() => setLoggedInUser(username), 900);
+        setTimeout(() => setLoggedInUser(username.trim()), 900);
         return;
       } else {
-        setMessage('🎉 Account created! Please login.');
-        setIsLogin(true);
+        showToast('Account created — please log in.');
+        switchTab(true);
       }
     } catch (error) {
-      setIsError(true);
-      const rawMsg = error.response?.data?.error || 'Something went wrong';
+      const rawMsg = error.response?.data?.error || '';
       const lower = rawMsg.toLowerCase();
       if (lower.includes('password')) {
-        setMessage('❌ Incorrect password.');
+        showToast('Incorrect password. Please try again.');
         setErrorAction({ label: 'Forgot your password?', onClick: handleForgotPassword });
-      } else if (lower.includes('user') || lower.includes('exist') || lower.includes('not found')) {
-        setMessage(`❌ ${rawMsg}`);
-        setErrorAction({ label: 'Create an account?', onClick: () => { setIsLogin(false); setMessage(''); setErrorAction(null); } });
+      } else if (lower.includes('exist')) {
+        showToast('That username is already taken.');
+      } else if (lower.includes('not found') || lower.includes('user')) {
+        showToast("We couldn't find that account.");
+        setErrorAction({ label: 'Create an account instead?', onClick: () => switchTab(false) });
       } else {
-        setMessage('❌ ' + rawMsg);
+        showToast('Something went wrong. Please try again.');
       }
     }
     setLoading(false);
@@ -140,50 +177,58 @@ function App() {
     setLoginSuccess(false);
     setUsername('');
     setPassword('');
-    setMessage('');
   };
 
   const handleForgotPassword = () => {
-    setForgotMsg('🔧 Password reset is coming soon — please contact support for now.');
+    setForgotMsg('Password reset is coming soon — please contact support for now.');
   };
 
   if (loggedInUser) {
     return <Chat username={loggedInUser} onLogout={handleLogout} />;
   }
 
+  const usernameHasError = touched.username && fieldErrors.username;
+  const passwordHasError = touched.password && fieldErrors.password;
+
   return (
     <>
       <style>{`
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        @keyframes gradientShift {
-          0% { background-position: 0% 50%; }
-          50% { background-position: 100% 50%; }
-          100% { background-position: 0% 50%; }
+
+        :root {
+          --bg: #07070b;
+          --surface: #111120;
+          --surface-elevated: #15152a;
+          --border: rgba(255,255,255,0.08);
+          --border-strong: rgba(255,255,255,0.16);
+          --fg: #f1f5f9;
+          --muted-fg: #8b93a7;
+          --faint-fg: #4b5468;
+          --primary: #7c5cff;
+          --primary-2: #5b8cff;
+          --primary-fg: #ffffff;
+          --success: #10b981;
+          --warning: #f59e0b;
+          --destructive: #ef4444;
         }
-        @keyframes float {
-          0%, 100% { transform: translateY(0px); }
-          50% { transform: translateY(-20px); }
+
+        @keyframes auroraDrift {
+          0%, 100% { transform: translate(-8%, -6%) scale(1); opacity: 0.55; }
+          50% { transform: translate(8%, 6%) scale(1.12); opacity: 0.8; }
         }
-        @keyframes pulse {
-          0%, 100% { opacity: 0.4; transform: scale(1); }
-          50% { opacity: 0.8; transform: scale(1.05); }
-        }
-        @keyframes slideIn {
-          from { opacity: 0; transform: translateY(20px); }
+        @keyframes cardIn {
+          from { opacity: 0; transform: translateY(8px); }
           to { opacity: 1; transform: translateY(0); }
         }
         @keyframes spin { to { transform: rotate(360deg); } }
-        @keyframes shake {
-          0%, 100% { transform: translateX(0); }
-          25% { transform: translateX(-4px); }
-          75% { transform: translateX(4px); }
+        @keyframes toastIn {
+          from { opacity: 0; transform: translateY(-8px); }
+          to { opacity: 1; transform: translateY(0); }
         }
-        @keyframes underlineIn {
-          from { transform: scaleX(0); }
-          to { transform: scaleX(1); }
-        }
-        @keyframes rippleBtn {
-          to { transform: scale(3); opacity: 0; }
+        @keyframes checkPop {
+          0% { transform: scale(0); opacity: 0; }
+          60% { transform: scale(1.15); opacity: 1; }
+          100% { transform: scale(1); opacity: 1; }
         }
 
         @media (prefers-reduced-motion: reduce) {
@@ -195,248 +240,442 @@ function App() {
           }
         }
 
-        body {
+        body { min-height: 100vh; background: var(--bg); }
+
+        .auth-page {
           min-height: 100vh;
-          background: linear-gradient(-45deg, #0f0c29, #302b63, #24243e, #1a1a2e, #0f3460, #533483);
-          background-size: 400% 400%;
-          animation: gradientShift 8s ease infinite;
+          font-family: 'Segoe UI', sans-serif;
+          color: var(--fg);
         }
-        .page {
+        .auth-shell {
           min-height: 100vh;
+          display: flex;
+          flex-direction: column;
+        }
+
+        /* ===== BRAND PANEL (desktop split) ===== */
+        .brand-panel {
+          display: none;
+        }
+        .brand-panel-inner {
+          position: relative;
+          z-index: 1;
+          max-width: 380px;
+        }
+        .aurora { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+        .aurora::before, .aurora::after {
+          content: '';
+          position: absolute;
+          width: 60%; height: 60%;
+          border-radius: 50%;
+          filter: blur(90px);
+          animation: auroraDrift 10s ease-in-out infinite;
+        }
+        .aurora::before { background: var(--primary); top: -10%; left: -10%; opacity: 0.35; }
+        .aurora::after { background: var(--primary-2); bottom: -10%; right: -10%; opacity: 0.28; animation-delay: 2s; }
+        .noise-overlay {
+          position: absolute; inset: 0;
+          opacity: 0.03; pointer-events: none;
+          background-image: radial-gradient(circle at 1px 1px, white 1px, transparent 0);
+          background-size: 3px 3px;
+        }
+
+        .brand-mark {
+          width: 48px; height: 48px; border-radius: 12px;
+          background: linear-gradient(135deg, var(--primary), var(--primary-2));
+          display: flex; align-items: center; justify-content: center;
+          color: var(--primary-fg); flex-shrink: 0;
+        }
+        .brand-wordmark { font-size: 26px; font-weight: 800; letter-spacing: -0.01em; color: var(--fg); margin-top: 16px; }
+        .brand-tagline { font-size: 14px; color: var(--muted-fg); margin-top: 4px; letter-spacing: 0.02em; }
+        .brand-bullets { list-style: none; margin-top: 32px; display: flex; flex-direction: column; gap: 14px; }
+        .brand-bullets li { display: flex; align-items: center; gap: 10px; font-size: 14px; color: var(--muted-fg); }
+        .brand-bullet-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--primary); flex-shrink: 0; }
+
+        /* ===== MOBILE BRAND (collapsed) ===== */
+        .mobile-brand { text-align: center; padding: 32px 20px 8px; }
+        .mobile-brand .brand-mark { margin: 0 auto; }
+        .mobile-brand .brand-wordmark { font-size: 22px; }
+
+        /* ===== FORM PANEL ===== */
+        .form-panel {
+          flex: 1;
           display: flex;
           align-items: center;
           justify-content: center;
-          font-family: 'Segoe UI', sans-serif;
+          padding: 20px;
+        }
+        .auth-card {
+          width: 100%;
+          max-width: 420px;
+          background: var(--surface-elevated);
+          border: 1px solid var(--border);
+          border-radius: 20px;
+          padding: 32px;
+          box-shadow: 0 32px 64px rgba(0,0,0,0.6);
+          animation: cardIn 300ms ease-out;
+        }
+
+        /* ===== SEGMENTED TOGGLE ===== */
+        .tabs-pill {
           position: relative;
-          overflow: hidden;
+          display: flex;
+          background: var(--surface);
+          border: 1px solid var(--border);
+          border-radius: 12px;
+          padding: 4px;
+          margin-bottom: 24px;
         }
-        .blob { position: absolute; border-radius: 50%; filter: blur(80px); animation: pulse 4s ease-in-out infinite; pointer-events: none; }
-        .blob1 { width: 400px; height: 400px; background: rgba(102,126,234,0.3); top: -100px; left: -100px; }
-        .blob2 { width: 300px; height: 300px; background: rgba(118,75,162,0.3); bottom: -80px; right: -80px; animation-delay: 2s; }
-        .blob3 { width: 200px; height: 200px; background: rgba(79,172,254,0.2); top: 50%; left: 50%; animation-delay: 1s; }
-        .card { background: rgba(255,255,255,0.06); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border: 1px solid rgba(255,255,255,0.1); border-radius: 24px; padding: 48px 40px; width: 400px; box-shadow: 0 25px 50px rgba(0,0,0,0.5); animation: slideIn 0.4s ease-out; position: relative; z-index: 10; }
-        .logo-area { text-align: center; margin-bottom: 32px; animation: float 6s ease-in-out infinite; }
-        .logo-icon { font-size: 62px; display: block; margin-bottom: 10px; filter: drop-shadow(0 0 20px rgba(102,126,234,0.8)); }
-        .logo-text { font-size: 33px; font-weight: 800; background: linear-gradient(135deg, #667eea, #f093fb); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; letter-spacing: 2px; }
-        .logo-sub { color: rgba(255,255,255,0.5); font-size: 13px; margin-top: 4px; letter-spacing: 1px; }
-        .tabs { display: flex; background: rgba(255,255,255,0.05); border-radius: 12px; padding: 4px; margin-bottom: 28px; border: 1px solid rgba(255,255,255,0.08); position: relative; }
-        .tab { flex: 1; padding: 10px; text-align: center; border-radius: 9px; cursor: pointer; font-size: 14px; font-weight: 600; transition: color 0.25s ease, background 0.25s ease; color: rgba(255,255,255,0.5); border: none; background: transparent; position: relative; z-index: 1; }
-        .tab.active { background: linear-gradient(135deg, #667eea, #764ba2); color: white; box-shadow: 0 4px 15px rgba(102,126,234,0.4); transition: background 0.25s ease, color 0.25s ease, transform 0.25s cubic-bezier(0.34,1.56,0.64,1); }
-        .input-group { margin-bottom: 6px; position: relative; }
-        .input-icon { position: absolute; left: 16px; top: 26px; transform: translateY(-50%); font-size: 18px; z-index: 1; }
-        .input-field { width: 100%; padding: 14px 44px 14px 46px; background: rgba(255,255,255,0.07); border: 1.5px solid rgba(255,255,255,0.1); border-radius: 12px; color: white; font-size: 14px; outline: none; transition: border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease; }
-        .input-field::placeholder { color: rgba(255,255,255,0.35); }
-        .input-field.focused { border-color: #7c3aed; background: rgba(124,58,237,0.1); box-shadow: 0 0 0 2px rgba(124,58,237,0.5); }
-        .input-field.field-error { border-color: #e74c3c; }
-        .field-error-text { color: #e74c3c; font-size: 12px; margin: 4px 2px 12px; display: flex; align-items: center; gap: 4px; animation: shake 0.3s ease; }
-        .password-toggle-btn { position: absolute; right: 14px; top: 26px; transform: translateY(-50%); background: none; border: none; color: rgba(255,255,255,0.5); font-size: 13px; cursor: pointer; font-weight: 600; letter-spacing: 0.5px; padding: 4px; transition: color 0.2s ease; }
-        .password-toggle-btn:hover { color: #667eea; }
-        .strength-bar-wrap { display: flex; gap: 4px; margin: 6px 2px 12px; }
-        .strength-bar { flex: 1; height: 4px; border-radius: 2px; background: rgba(255,255,255,0.1); transition: background 0.3s ease; }
-        .strength-bar.filled-weak { background: #e74c3c; }
-        .strength-bar.filled-medium { background: #f39c12; }
-        .strength-bar.filled-strong { background: #2ecc71; }
-        .strength-bar.filled-verystrong { background: #00d4aa; }
-        .strength-label { font-size: 11px; margin: -8px 2px 4px; font-weight: 600; }
-        .strength-label.weak { color: #e74c3c; }
-        .strength-label.medium { color: #f39c12; }
-        .strength-label.strong { color: #2ecc71; }
-        .strength-label.verystrong { color: #00d4aa; }
-        .form-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; }
-        .remember-me { display: flex; align-items: center; gap: 7px; color: rgba(255,255,255,0.5); font-size: 13px; cursor: pointer; user-select: none; }
-        .remember-me input { accent-color: #667eea; width: 15px; height: 15px; cursor: pointer; }
-        .forgot-link { color: #667eea; font-size: 13px; font-weight: 600; cursor: pointer; background: none; border: none; position: relative; }
-        .forgot-link::after { content: ''; position: absolute; left: 0; bottom: -2px; width: 100%; height: 1px; background: #f093fb; transform: scaleX(0); transform-origin: left; transition: transform 0.2s ease; }
-        .forgot-link:hover { color: #f093fb; }
-        .forgot-link:hover::after { transform: scaleX(1); }
-        .forgot-msg { text-align: center; margin: -10px 0 16px; padding: 8px 14px; border-radius: 10px; font-size: 12px; background: rgba(102,126,234,0.12); border: 1px solid rgba(102,126,234,0.25); color: #a5b4f5; }
-        .submit-btn { width: 100%; padding: 15px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; border-radius: 12px; font-size: 16px; font-weight: 700; cursor: pointer; margin-top: 8px; transition: transform 0.2s ease, box-shadow 0.2s ease, filter 0.2s ease; letter-spacing: 1px; position: relative; overflow: hidden; }
-        .submit-btn:hover:not(:disabled) { transform: scale(1.02); filter: brightness(1.1); box-shadow: 0 8px 24px rgba(124,58,237,0.4); }
-        .submit-btn:active:not(:disabled) { transform: scale(0.98); }
-        .submit-btn:disabled { opacity: 0.7; cursor: not-allowed; transform: none; }
-        .spinner { width: 18px; height: 18px; border: 2px solid rgba(255,255,255,0.3); border-top-color: white; border-radius: 50%; animation: spin 0.8s linear infinite; display: inline-block; vertical-align: middle; margin-right: 8px; }
-        .message { text-align: center; margin-top: 16px; padding: 10px 16px; border-radius: 10px; font-size: 13px; font-weight: 500; }
-        .message.success { background: rgba(39,174,96,0.15); border: 1px solid rgba(39,174,96,0.3); color: #2ecc71; }
-        .message.error { background: rgba(231,76,60,0.15); border: 1px solid rgba(231,76,60,0.3); color: #e74c3c; }
+        .tabs-indicator {
+          position: absolute;
+          top: 4px; left: 4px;
+          width: calc(50% - 4px);
+          height: calc(100% - 8px);
+          border-radius: 9px;
+          background: linear-gradient(135deg, var(--primary), var(--primary-2));
+          transition: transform 200ms ease-out;
+        }
+        .tabs-indicator.signup { transform: translateX(100%); }
+        .tab-btn {
+          flex: 1; position: relative; z-index: 1;
+          padding: 10px; text-align: center;
+          border: none; background: transparent;
+          font-size: 14px; font-weight: 600;
+          color: var(--muted-fg); cursor: pointer;
+          border-radius: 9px;
+          transition: color 200ms ease;
+          min-height: 40px;
+        }
+        .tab-btn.active { color: var(--primary-fg); }
+        .tab-btn:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+
+        /* ===== FIELDS ===== */
+        .field-group { margin-bottom: 16px; }
+        .field-label {
+          display: block; font-size: 12px; font-weight: 600;
+          color: var(--muted-fg); margin-bottom: 6px;
+          text-transform: uppercase; letter-spacing: 0.04em;
+        }
+        .field-control {
+          position: relative;
+          display: flex; align-items: center;
+          height: 48px;
+          background: var(--surface);
+          border: 1px solid var(--border);
+          border-radius: 10px;
+          transition: border-color 150ms ease, box-shadow 150ms ease;
+        }
+        .field-control:focus-within {
+          border-color: var(--primary);
+          box-shadow: 0 0 0 2px rgba(124,92,255,0.35);
+        }
+        .field-control.has-error { border-color: var(--destructive); }
+        .field-icon { margin-left: 14px; color: var(--muted-fg); flex-shrink: 0; transition: color 150ms ease; }
+        .field-control:focus-within .field-icon { color: var(--primary); }
+        .field-control.has-error .field-icon { color: var(--destructive); }
+        .field-input {
+          flex: 1; min-width: 0;
+          height: 100%; padding: 0 14px;
+          background: transparent; border: none; outline: none;
+          color: var(--fg); font-size: 14px;
+        }
+        .field-input::placeholder { color: var(--faint-fg); }
+        .field-toggle-btn {
+          width: 44px; height: 44px; flex-shrink: 0;
+          display: flex; align-items: center; justify-content: center;
+          background: none; border: none; color: var(--muted-fg); cursor: pointer;
+          transition: color 150ms ease;
+        }
+        .field-toggle-btn:hover { color: var(--fg); }
+        .field-toggle-btn:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; border-radius: 8px; }
+
+        .field-error {
+          display: flex; align-items: center; gap: 5px;
+          color: var(--destructive); font-size: 12px; margin-top: 6px;
+        }
+        .field-hint { color: var(--faint-fg); font-size: 12px; margin-top: 6px; }
+
+        /* ===== FIXED-HEIGHT CROSS-FADE ZONE (avoids card height jump on tab switch) ===== */
+        .extras-zone { position: relative; min-height: 46px; margin-bottom: 4px; }
+        .extras-pane {
+          position: absolute; inset: 0;
+          opacity: 0; pointer-events: none;
+          transition: opacity 150ms ease;
+        }
+        .extras-pane.visible { opacity: 1; pointer-events: auto; position: static; }
+
+        .form-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+        .remember-me { display: flex; align-items: center; gap: 7px; color: var(--muted-fg); font-size: 13px; cursor: pointer; user-select: none; }
+        .remember-me input { accent-color: var(--primary); width: 15px; height: 15px; cursor: pointer; }
+        .forgot-link { color: var(--primary); font-size: 13px; font-weight: 600; cursor: pointer; background: none; border: none; }
+        .forgot-link:hover { color: var(--primary-2); }
+        .forgot-link:focus-visible, .footer-link:focus-visible, .error-action-link:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; border-radius: 4px; }
+
+        .signup-extras { min-height: 132px; }
+        .strength-zone { margin-bottom: 10px; }
+        .strength-bar-wrap { display: flex; gap: 4px; margin-bottom: 6px; }
+        .strength-bar { flex: 1; height: 4px; border-radius: 2px; background: var(--border); }
+        .strength-bar.on-1 { background: rgba(124,92,255,0.35); }
+        .strength-bar.on-2 { background: rgba(124,92,255,0.55); }
+        .strength-bar.on-3 { background: rgba(124,92,255,0.78); }
+        .strength-bar.on-4 { background: var(--primary); }
+        .strength-label { font-size: 11px; font-weight: 600; color: var(--muted-fg); }
+
+        .password-checklist { display: grid; grid-template-columns: 1fr; gap: 6px 14px; margin-top: 4px; }
+        @media (min-width: 380px) {
+          .password-checklist { grid-template-columns: 1fr 1fr; }
+        }
+        .check-item { font-size: 12px; display: flex; align-items: center; gap: 6px; color: var(--faint-fg); }
+        .check-item.met { color: var(--success); }
+        .check-item .check-icon-pop { animation: checkPop 250ms ease; }
+
+        .btn-primary {
+          width: 100%; height: 48px;
+          background: linear-gradient(135deg, var(--primary), var(--primary-2));
+          color: var(--primary-fg); border: none; border-radius: 12px;
+          font-size: 15px; font-weight: 700; cursor: pointer;
+          display: flex; align-items: center; justify-content: center; gap: 8px;
+          margin-top: 8px;
+          transition: filter 150ms ease, transform 100ms ease, box-shadow 150ms ease;
+        }
+        .btn-primary:hover:not(:disabled) { filter: brightness(1.08); box-shadow: 0 8px 24px rgba(124,92,255,0.35); }
+        .btn-primary:active:not(:disabled) { transform: scale(0.98); }
+        .btn-primary:disabled { opacity: 0.6; cursor: not-allowed; }
+        .btn-primary:focus-visible { outline: 2px solid white; outline-offset: 2px; }
+        .spin-icon { animation: spin 0.9s linear infinite; }
+
+        .forgot-msg {
+          text-align: center; margin-top: 14px; padding: 8px 14px; border-radius: 10px;
+          font-size: 12px; background: rgba(124,92,255,0.12); border: 1px solid rgba(124,92,255,0.25); color: var(--muted-fg);
+        }
+        .error-action-link {
+          display: block; width: 100%; text-align: center; margin-top: 10px;
+          color: var(--primary); font-size: 13px; font-weight: 600; cursor: pointer; background: none; border: none;
+        }
+        .error-action-link:hover { color: var(--primary-2); }
+
         .divider { display: flex; align-items: center; margin: 20px 0; gap: 12px; }
-        .divider-line { flex: 1; height: 1px; background: rgba(255,255,255,0.1); }
-        .divider-text { color: rgba(255,255,255,0.3); font-size: 12px; }
-        .footer-text { text-align: center; color: rgba(255,255,255,0.4); font-size: 13px; margin-top: 4px; }
-        .footer-link { color: #667eea; cursor: pointer; font-weight: 600; }
-        .footer-link:hover { color: #f093fb; }
+        .divider-line { flex: 1; height: 1px; background: var(--border); }
+        .divider-text { color: var(--faint-fg); font-size: 12px; }
+        .footer-text { text-align: center; color: var(--muted-fg); font-size: 13px; }
+        .footer-link { color: var(--primary); cursor: pointer; font-weight: 600; background: none; border: none; font-size: 13px; }
+        .footer-link:hover { color: var(--primary-2); }
 
-        /* ===== USERNAME HINT ===== */
-        .field-hint { color: rgba(255,255,255,0.35); font-size: 11px; margin: 4px 2px 12px; }
-
-        /* ===== PASSWORD CHECKLIST ===== */
-        .password-checklist { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 8px 2px 12px; }
-        .check-item { font-size: 11px; display: flex; align-items: center; gap: 4px; color: rgba(255,255,255,0.3); transition: color 0.2s ease; }
-        .check-item.met { color: #2ecc71; }
-
-        /* ===== ERROR ACTION LINK ===== */
-        .error-action-link { display: block; text-align: center; margin-top: -8px; margin-bottom: 8px; color: #667eea; font-size: 13px; font-weight: 600; cursor: pointer; background: none; border: none; }
-        .error-action-link:hover { color: #f093fb; }
-
-        /* ===== SUCCESS OVERLAY ===== */
-        @keyframes checkPop {
-          0% { transform: scale(0); opacity: 0; }
-          60% { transform: scale(1.2); opacity: 1; }
-          100% { transform: scale(1); opacity: 1; }
+        /* ===== SUCCESS SCREEN ===== */
+        .success-screen { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 40px 20px; }
+        .success-check {
+          width: 64px; height: 64px; border-radius: 50%;
+          background: rgba(16,185,129,0.15); border: 2px solid var(--success);
+          display: flex; align-items: center; justify-content: center; color: var(--success);
+          animation: checkPop 0.4s ease;
         }
-        .success-screen { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 40px 20px; animation: fadeIn 0.3s ease; }
-        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-        .success-check { width: 64px; height: 64px; border-radius: 50%; background: rgba(46,204,113,0.15); border: 2px solid #2ecc71; display: flex; align-items: center; justify-content: center; font-size: 32px; color: #2ecc71; animation: checkPop 0.5s ease; }
-        .success-title { font-size: 18px; font-weight: 700; color: white; }
-        .success-sub { font-size: 13px; color: rgba(255,255,255,0.5); display: flex; align-items: center; gap: 8px; }
+        .success-title { font-size: 18px; font-weight: 700; color: var(--fg); }
+        .success-sub { font-size: 13px; color: var(--muted-fg); display: flex; align-items: center; gap: 8px; }
 
-        @media (max-width: 480px) {
-          .page {
-            padding: 28px 16px 40px;
-            align-items: flex-start;
-            justify-content: center;
-            overflow-y: auto;
+        /* ===== TOAST ===== */
+        .toast {
+          position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
+          z-index: 9999;
+          background: var(--surface-elevated); border: 1px solid var(--border-strong);
+          border-radius: 12px; padding: 12px 18px;
+          display: flex; align-items: center; gap: 10px;
+          color: var(--fg); font-size: 13px; font-weight: 500;
+          box-shadow: 0 12px 32px rgba(0,0,0,0.5);
+          animation: toastIn 200ms ease-out;
+          max-width: calc(100vw - 32px);
+        }
+        .toast-icon { color: var(--destructive); flex-shrink: 0; }
+
+        /* ===== DESKTOP SPLIT (>=1024px) ===== */
+        @media (min-width: 1024px) {
+          .auth-shell { flex-direction: row; }
+          .brand-panel {
+            display: flex; align-items: center;
+            width: 45%; max-width: 640px;
+            position: relative; overflow: hidden;
+            padding: 64px;
+            background: var(--surface);
+            border-right: 1px solid var(--border);
           }
-          .card {
-            width: 100%;
-            max-width: 400px;
-            margin-top: 24px;
-            padding: 30px 22px 26px;
-            border-radius: 22px;
-          }
-          .logo-area { margin-bottom: 22px; }
-          .logo-icon { font-size: 44px; margin-bottom: 6px; }
-          .logo-text { font-size: 24px; letter-spacing: 1px; }
-          .logo-sub { font-size: 11px; }
-          .tabs { margin-bottom: 20px; }
-          .tab { padding: 9px; font-size: 13px; }
-          .input-field { padding: 12px 40px 12px 42px; font-size: 13px; }
-          .input-icon { left: 14px; top: 23px; font-size: 16px; }
-          .password-toggle-btn { right: 12px; top: 23px; font-size: 12px; }
-          .form-row { flex-direction: column; align-items: flex-start; gap: 10px; margin-bottom: 16px; }
-          .remember-me input { width: 17px; height: 17px; }
-          .submit-btn { padding: 13px; font-size: 15px; }
-          .strength-bar-wrap { margin: 6px 2px 10px; }
-          .strength-label { font-size: 10px; }
-          .field-error-text { font-size: 11px; }
-          .message { font-size: 12px; padding: 9px 14px; }
-          .forgot-msg { font-size: 11px; padding: 8px 12px; }
-          .footer-text { font-size: 12px; margin-top: 2px; }
-          .divider { margin: 16px 0; }
-          .blob1 { width: 250px; height: 250px; }
-          .blob2 { width: 200px; height: 200px; }
-          .blob3 { width: 140px; height: 140px; }
+          .mobile-brand { display: none; }
+          .form-panel { flex: 1; padding: 40px; }
         }
 
-        @media (max-width: 340px) {
-          .card { padding: 24px 18px 22px; margin-top: 16px; }
-          .logo-icon { font-size: 38px; }
-          .logo-text { font-size: 21px; }
+        @media (max-width: 479px) {
+          .auth-card { padding: 24px; border-radius: 16px; }
+          .form-panel { padding: 12px 20px 32px; align-items: flex-start; }
+          .form-row { flex-direction: column; align-items: flex-start; gap: 10px; }
         }
       `}</style>
 
-      <div className="page">
-        <div className="blob blob1"></div>
-        <div className="blob blob2"></div>
-        <div className="blob blob3"></div>
-        <div className="card">
-          {loginSuccess ? (
-            <div className="success-screen">
-              <div className="success-check">✓</div>
-              <div className="success-title">Login Successful</div>
-              <div className="success-sub"><span className="spinner"></span> Redirecting...</div>
-            </div>
-          ) : (
-          <>
-          <div className="logo-area">
-            <span className="logo-icon">💬</span>
-            <div className="logo-text">Nalantamil</div>
-            <div className="logo-sub">Chat · Connect · Celebrate</div>
+      <div className="auth-page">
+        {toast && (
+          <div className="toast" role="alert">
+            <AlertCircle size={16} className="toast-icon" />
+            <span>{toast.message}</span>
           </div>
-          <div className="tabs">
-            <button className={`tab ${isLogin ? 'active' : ''}`} onClick={() => { setIsLogin(true); setMessage(''); setForgotMsg(''); setFieldErrors({ username: '', password: '' }); }}>Login</button>
-            <button className={`tab ${!isLogin ? 'active' : ''}`} onClick={() => { setIsLogin(false); setMessage(''); setForgotMsg(''); setFieldErrors({ username: '', password: '' }); }}>Signup</button>
+        )}
+
+        <div className="auth-shell">
+          <div className="brand-panel">
+            <div className="aurora"></div>
+            <div className="noise-overlay"></div>
+            <div className="brand-panel-inner">
+              <div className="brand-mark"><MessageCircle size={24} /></div>
+              <div className="brand-wordmark">Nalantamil</div>
+              <div className="brand-tagline">Chat · Connect · Celebrate</div>
+              <ul className="brand-bullets">
+                <li><span className="brand-bullet-dot"></span> Real-time messaging, channels &amp; DMs</li>
+                <li><span className="brand-bullet-dot"></span> Password-lockable private chats</li>
+                <li><span className="brand-bullet-dot"></span> Built for small teams and friends</li>
+              </ul>
+            </div>
           </div>
-          <form onSubmit={handleSubmit} noValidate>
-            <div className="input-group">
-              <span className="input-icon">👤</span>
-              <input
-                type="text"
-                placeholder="Username"
-                value={username}
-                onChange={(e) => { setUsername(e.target.value); setFieldErrors(prev => ({ ...prev, username: '' })); }}
-                onFocus={() => setFocusedInput('username')}
-                onBlur={() => setFocusedInput('')}
-                className={`input-field ${focusedInput === 'username' ? 'focused' : ''} ${fieldErrors.username ? 'field-error' : ''}`}
-              />
-            </div>
-            {fieldErrors.username && <div className="field-error-text">❌ {fieldErrors.username}</div>}
-            {!isLogin && !fieldErrors.username && (
-              <div className="field-hint">3-20 characters · Letters, numbers, underscore</div>
-            )}
 
-            <div className="input-group">
-              <span className="input-icon">🔒</span>
-              <input
-                type={showPassword ? 'text' : 'password'}
-                placeholder="Password"
-                value={password}
-                onChange={(e) => { setPassword(e.target.value); setFieldErrors(prev => ({ ...prev, password: '' })); }}
-                onFocus={() => setFocusedInput('password')}
-                onBlur={() => setFocusedInput('')}
-                className={`input-field ${focusedInput === 'password' ? 'focused' : ''} ${fieldErrors.password ? 'field-error' : ''}`}
-              />
-              <button type="button" className="password-toggle-btn" onClick={() => setShowPassword(!showPassword)} tabIndex={-1}>
-                {showPassword ? '🙈 Hide' : '👁 Show'}
-              </button>
-            </div>
-            {fieldErrors.password && <div className="field-error-text">❌ {fieldErrors.password}</div>}
-
-            {!isLogin && password && (
-              <>
-                <div className="strength-bar-wrap">
-                  {[1, 2, 3, 4].map(tier => (
-                    <div key={tier} className={`strength-bar ${passwordStrength.level >= tier ? `filled-${passwordStrength.label.toLowerCase().replace(' ', '')}` : ''}`}></div>
-                  ))}
-                </div>
-                <div className={`strength-label ${passwordStrength.label.toLowerCase().replace(' ', '')}`}>
-                  Password Strength: {passwordStrength.label}
-                </div>
-                <div className="password-checklist">
-                  <span className={`check-item ${passwordChecks.length ? 'met' : ''}`}>{passwordChecks.length ? '✓' : '○'} 8+ characters</span>
-                  <span className={`check-item ${passwordChecks.uppercase ? 'met' : ''}`}>{passwordChecks.uppercase ? '✓' : '○'} Uppercase</span>
-                  <span className={`check-item ${passwordChecks.number ? 'met' : ''}`}>{passwordChecks.number ? '✓' : '○'} Number</span>
-                  <span className={`check-item ${passwordChecks.special ? 'met' : ''}`}>{passwordChecks.special ? '✓' : '○'} Special character</span>
-                </div>
-              </>
-            )}
-
-            {isLogin && (
-              <div className="form-row">
-                <label className="remember-me">
-                  <input type="checkbox" checked={rememberMe} onChange={(e) => setRememberMe(e.target.checked)} />
-                  Remember Me
-                </label>
-                <button type="button" className="forgot-link" onClick={handleForgotPassword}>Forgot Password?</button>
+          <div className="form-panel">
+            <div style={{ width: '100%', maxWidth: 420 }}>
+              <div className="mobile-brand">
+                <div className="brand-mark"><MessageCircle size={22} /></div>
+                <div className="brand-wordmark">Nalantamil</div>
+                <div className="brand-tagline">Chat · Connect · Celebrate</div>
               </div>
-            )}
 
-            <button type="submit" className="submit-btn" disabled={loading}>
-              {loading && <span className="spinner"></span>}
-              {loading ? 'Please wait...' : (isLogin ? '🚀 Login' : '✨ Create Account')}
-            </button>
-          </form>
-          {forgotMsg && <div className="forgot-msg">{forgotMsg}</div>}
-          {message && <div className={`message ${isError ? 'error' : 'success'}`}>{message}</div>}
-          {errorAction && <button className="error-action-link" onClick={errorAction.onClick}>{errorAction.label}</button>}
-          <div className="divider"><div className="divider-line"></div><span className="divider-text">or</span><div className="divider-line"></div></div>
-          <p className="footer-text">
-            {isLogin ? "New here? " : "Already have an account? "}
-            <span className="footer-link" onClick={() => { setIsLogin(!isLogin); setMessage(''); setForgotMsg(''); setFieldErrors({ username: '', password: '' }); }}>
-              {isLogin ? 'Create an account →' : '← Back to Login'}
-            </span>
-          </p>
-          </>
-          )}
+              <div className="auth-card">
+                {loginSuccess ? (
+                  <div className="success-screen">
+                    <div className="success-check"><Check size={28} /></div>
+                    <div className="success-title">Login Successful</div>
+                    <div className="success-sub"><Loader2 size={16} className="spin-icon" /> Redirecting...</div>
+                  </div>
+                ) : (
+                  <>
+                    <div className="tabs-pill">
+                      <div className={`tabs-indicator ${!isLogin ? 'signup' : ''}`}></div>
+                      <button type="button" className={`tab-btn ${isLogin ? 'active' : ''}`} onClick={() => switchTab(true)}>Login</button>
+                      <button type="button" className={`tab-btn ${!isLogin ? 'active' : ''}`} onClick={() => switchTab(false)}>Signup</button>
+                    </div>
+
+                    <form onSubmit={handleSubmit} noValidate>
+                      <div className="field-group">
+                        <label htmlFor="username" className="field-label">Username</label>
+                        <div className={`field-control ${usernameHasError ? 'has-error' : ''}`}>
+                          <User size={20} className="field-icon" />
+                          <input
+                            id="username"
+                            name="username"
+                            type="text"
+                            autoComplete="username"
+                            maxLength={20}
+                            placeholder="yourname"
+                            value={username}
+                            onChange={(e) => { setUsername(e.target.value); if (touched.username) validateField('username', e.target.value); }}
+                            onBlur={(e) => handleBlur('username', e.target.value)}
+                            className="field-input"
+                          />
+                        </div>
+                        {usernameHasError ? (
+                          <div className="field-error"><AlertCircle size={13} /> {fieldErrors.username}</div>
+                        ) : !isLogin ? (
+                          <div className="field-hint">3–20 characters · letters, numbers, underscore</div>
+                        ) : null}
+                      </div>
+
+                      <div className="field-group">
+                        <label htmlFor="password" className="field-label">Password</label>
+                        <div className={`field-control ${passwordHasError ? 'has-error' : ''}`}>
+                          <Lock size={20} className="field-icon" />
+                          <input
+                            id="password"
+                            name="password"
+                            type={showPassword ? 'text' : 'password'}
+                            autoComplete={isLogin ? 'current-password' : 'new-password'}
+                            maxLength={72}
+                            placeholder="••••••••"
+                            value={password}
+                            onChange={(e) => { setPassword(e.target.value); if (touched.password) validateField('password', e.target.value); }}
+                            onBlur={(e) => handleBlur('password', e.target.value)}
+                            className="field-input"
+                          />
+                          <button
+                            type="button"
+                            className="field-toggle-btn"
+                            aria-label={showPassword ? 'Hide password' : 'Show password'}
+                            onClick={() => setShowPassword(!showPassword)}
+                            tabIndex={-1}
+                          >
+                            {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                          </button>
+                        </div>
+                        {passwordHasError && <div className="field-error"><AlertCircle size={13} /> {fieldErrors.password}</div>}
+                      </div>
+
+                      <div className="extras-zone" aria-live="polite">
+                        {isLogin ? (
+                          <div className={`extras-pane ${isLogin ? 'visible' : ''}`}>
+                            <div className="form-row">
+                              <label className="remember-me">
+                                <input type="checkbox" checked={rememberMe} onChange={(e) => setRememberMe(e.target.checked)} />
+                                Remember me
+                              </label>
+                              <button type="button" className="forgot-link" onClick={handleForgotPassword}>Forgot password?</button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className={`extras-pane signup-extras ${!isLogin ? 'visible' : ''}`}>
+                            {password && (
+                              <div className="strength-zone">
+                                <div className="strength-bar-wrap">
+                                  {[1, 2, 3, 4].map(tier => (
+                                    <div key={tier} className={`strength-bar ${passwordStrength.level >= tier ? `on-${tier}` : ''}`}></div>
+                                  ))}
+                                </div>
+                                <div className="strength-label">Password strength: {passwordStrength.label}</div>
+                              </div>
+                            )}
+                            <div className="password-checklist">
+                              <span className={`check-item ${passwordChecks.length ? 'met' : ''}`}>
+                                {passwordChecks.length ? <Check size={14} /> : <Circle size={14} />} 8+ characters
+                              </span>
+                              <span className={`check-item ${passwordChecks.uppercase ? 'met' : ''}`}>
+                                {passwordChecks.uppercase ? <Check size={14} /> : <Circle size={14} />} Uppercase
+                              </span>
+                              <span className={`check-item ${passwordChecks.number ? 'met' : ''}`}>
+                                {passwordChecks.number ? <Check size={14} /> : <Circle size={14} />} Number
+                              </span>
+                              <span className={`check-item ${passwordChecks.special ? 'met' : ''}`}>
+                                {passwordChecks.special ? <Check size={14} /> : <Circle size={14} />} Special character
+                              </span>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      <button type="submit" className="btn-primary" disabled={loading}>
+                        {loading ? (
+                          <Loader2 size={18} className="spin-icon" />
+                        ) : isLogin ? (
+                          <>Log in <ArrowRight size={16} /></>
+                        ) : (
+                          <>Create account</>
+                        )}
+                      </button>
+                    </form>
+
+                    {forgotMsg && <div className="forgot-msg">{forgotMsg}</div>}
+                    {errorAction && <button className="error-action-link" onClick={errorAction.onClick}>{errorAction.label}</button>}
+
+                    <div className="divider"><div className="divider-line"></div><span className="divider-text">or</span><div className="divider-line"></div></div>
+                    <p className="footer-text">
+                      {isLogin ? 'New here? ' : 'Already have an account? '}
+                      <button type="button" className="footer-link" onClick={() => switchTab(!isLogin)}>
+                        {isLogin ? 'Create an account' : 'Log in'}
+                      </button>
+                    </p>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </>
