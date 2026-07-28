@@ -64,14 +64,13 @@ const BellIcon = (p) => <Icon {...p}><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s
 const BellOffIcon = (p) => <Icon {...p}><path d="M8.7 3a6 6 0 0 1 9.3 5c0 3.8.9 6.1 1.7 7.4" /><path d="M17.6 17H3s3-2 3-9c0-.5 0-1 .1-1.5" /><path d="M10.3 21a1.9 1.9 0 0 0 3.4 0" /><line x1="1" y1="1" x2="23" y2="23" /></Icon>;
 const XIcon = (p) => <Icon {...p}><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></Icon>;
 const ChevronLeftIcon = (p) => <Icon {...p}><path d="m15 18-6-6 6-6" /></Icon>;
-const MenuIcon = (p) => <Icon {...p}><line x1="4" y1="7" x2="20" y2="7" /><line x1="4" y1="12" x2="20" y2="12" /><line x1="4" y1="17" x2="20" y2="17" /></Icon>;
 const Volume2Icon = (p) => <Icon {...p}><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" /><path d="M15.5 8.5a5 5 0 0 1 0 7" /><path d="M18.5 5.5a9 9 0 0 1 0 13" /></Icon>;
 const VolumeXIcon = (p) => <Icon {...p}><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" /><line x1="23" y1="9" x2="17" y2="15" /><line x1="17" y1="9" x2="23" y2="15" /></Icon>;
 const MoreVerticalIcon = (p) => <Icon {...p}><circle cx="12" cy="5" r="1.2" /><circle cx="12" cy="12" r="1.2" /><circle cx="12" cy="19" r="1.2" /></Icon>;
-const ImageIcon = (p) => <Icon {...p}><rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="9" cy="9" r="2" /><path d="m21 15-5-5L5 21" /></Icon>;
 const CheckIcon = (p) => <Icon {...p}><path d="M20 6 9 17l-5-5" /></Icon>;
 const ChevronDownIcon = (p) => <Icon {...p}><path d="m6 9 6 6 6-6" /></Icon>;
 const MessageCircleIcon = (p) => <Icon {...p}><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z" /></Icon>;
+const Loader2Icon = (p) => <Icon {...p}><path d="M21 12a9 9 0 1 1-6.219-8.56" /></Icon>;
 
 function Chat({ username, onLogout }) {
   const [messages, setMessages] = useState([]);
@@ -194,7 +193,6 @@ function Chat({ username, onLogout }) {
   const [showConvoMenu, setShowConvoMenu] = useState(false);
 
   // ===== READ-STATE TRACKING (for the "N new messages" divider + jump pill) =====
-  const [lastReadAt, setLastReadAt] = useState({});
   const [scrolledUp, setScrolledUp] = useState(false);
   const [newSinceScroll, setNewSinceScroll] = useState(0);
   const [unreadBoundaryCount, setUnreadBoundaryCount] = useState({});
@@ -480,7 +478,7 @@ function Chat({ username, onLogout }) {
           const preview = msg.text?.startsWith('__IMAGE__') ? '🖼️ Photo' : msg.text?.startsWith('__FILE__') ? '📎 File' : msg.text;
           pushToast({ sender: msg.username, preview, roomKey: 'general', target: () => { setActiveRoom('general'); setActiveDMUser(null); } });
           pushNotifCenterItem({ type: 'message', sender: msg.username, preview, roomKey: 'general', target: () => { setActiveRoom('general'); setActiveDMUser(null); } });
-          if (notifSettings.sound) playNotifSound();
+          if (notifSettingsRef.current.sound) playNotifSound();
           fireBrowserNotification('general', msg.username, preview, () => { setActiveRoom('general'); setActiveDMUser(null); });
         }
       }
@@ -501,7 +499,7 @@ function Chat({ username, onLogout }) {
             const preview = msg.text?.startsWith('__IMAGE__') ? '🖼️ Photo' : msg.text?.startsWith('__FILE__') ? '📎 File' : msg.text;
             pushToast({ sender: msg.username, preview, roomKey: roomId, target: () => openDM(msg.username) });
             pushNotifCenterItem({ type: 'dm', sender: msg.username, preview, roomKey: roomId, target: () => openDM(msg.username) });
-            if (notifSettings.sound) playNotifSound();
+            if (notifSettingsRef.current.sound) playNotifSound();
             fireBrowserNotification(roomId, msg.username, preview, () => openDM(msg.username));
           }
         }
@@ -548,6 +546,7 @@ function Chat({ username, onLogout }) {
       socket.off('user_typing'); socket.off('user_stop_typing');
       socket.off('message_pinned'); socket.off('message_unpinned');
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [username, isTabFocused, activeDMUser, activeRoom, currentRoomId]);
 
   // ===== SCROLL TRACKING — only auto-scroll to bottom if the user hasn't
@@ -588,7 +587,6 @@ function Chat({ username, onLogout }) {
       setNewSinceScroll(0);
       if (currentRoomId) {
         setUnreadBoundaryCount(prev => (prev[currentRoomId] ? { ...prev, [currentRoomId]: 0 } : prev));
-        markRoomRead(currentRoomId);
       }
     }
   };
@@ -985,9 +983,10 @@ function Chat({ username, onLogout }) {
 
   // Live document.title prefix — "(3) Nalantamil" while unread, cleared on focus.
   useEffect(() => {
-    const total = unreadCount + totalUnreadDMs;
+    const dmTotal = Object.values(unreadDMs).reduce((a, b) => a + b, 0);
+    const total = unreadCount + dmTotal;
     document.title = total > 0 ? `(${total}) Nalantamil` : 'Nalantamil';
-  }, [unreadCount, totalUnreadDMs]);
+  }, [unreadCount, unreadDMs]);
   useEffect(() => {
     const onFocusClearTitle = () => { document.title = 'Nalantamil'; };
     window.addEventListener('focus', onFocusClearTitle);
@@ -1038,10 +1037,6 @@ function Chat({ username, onLogout }) {
       return mentioned || repliedToMe;
     }
     return true;
-  };
-
-  const markRoomRead = (roomKey) => {
-    setLastReadAt(prev => ({ ...prev, [roomKey]: Date.now() }));
   };
 
   const pushToast = ({ avatar, avatarColor, sender, preview, roomKey, target }) => {
@@ -1189,9 +1184,10 @@ function Chat({ username, onLogout }) {
     return last.text || '';
   };
 
-  // ===== SIDEBAR STYLE — normal always-visible panel on wide screens; a slide-out
-  // overlay drawer on narrow/mobile screens. Computed in JS and applied inline so
-  // nothing in the stylesheet can silently override it. =====
+  // ===== SIDEBAR STYLE — normal always-visible panel on wide screens; a 72px
+  // icon rail on tablet (768–1023px); a slide-out overlay drawer on narrow/mobile
+  // screens. Computed in JS and applied inline so nothing in the stylesheet can
+  // silently override it. =====
   const sidebarDynamicStyle = isMobile
     ? {
         position: 'fixed',
@@ -1205,6 +1201,15 @@ function Chat({ username, onLogout }) {
         boxShadow: sidebarOpen ? '12px 0 50px rgba(0,0,0,0.45)' : 'none',
         background: 'rgba(10,8,25,0.98)',
         backdropFilter: 'blur(12px)',
+        opacity: 1,
+      }
+    : isTablet
+    ? {
+        position: 'relative',
+        width: '72px',
+        minWidth: '72px',
+        height: '100vh',
+        transform: 'none',
         opacity: 1,
       }
     : {
@@ -1525,6 +1530,29 @@ function Chat({ username, onLogout }) {
         .profile-icon-btn { color: #475569; }
         .profile-icon-btn:hover { background: rgba(255,255,255,0.08); color: #818cf8; transform: rotate(90deg); transition: transform 400ms ease, background 0.2s, color 0.2s; }
 
+        /* ===== TABLET ICON RAIL (768–1023px) — collapsed sidebar: avatars/glyphs
+           only, name shown as a native title tooltip on hover. ===== */
+        .sidebar-rail .sidebar-search-wrap,
+        .sidebar-rail .sidebar-section-title span:first-child,
+        .sidebar-rail .channel-info,
+        .sidebar-rail .dm-info,
+        .sidebar-rail .user-info,
+        .sidebar-rail .logo-name,
+        .sidebar-rail .pm-footer-note {
+          display: none;
+        }
+        .sidebar-rail .channel-item,
+        .sidebar-rail .dm-item {
+          justify-content: center;
+          padding: 10px 0;
+        }
+        .sidebar-rail .sidebar-user {
+          justify-content: center;
+          flex-wrap: wrap;
+          gap: 6px;
+        }
+        .sidebar-rail .logo-row { justify-content: center; }
+
         .ripple-btn { position: relative; overflow: hidden; }
         .ripple-btn::after { content: ''; position: absolute; width: 10px; height: 10px; background: rgba(255,255,255,0.3); border-radius: 50%; top: 50%; left: 50%; transform: translate(-50%,-50%) scale(0); opacity: 1; }
         .ripple-btn:active::after { animation: ripple 0.4s ease-out; }
@@ -1792,6 +1820,7 @@ function Chat({ username, onLogout }) {
         .send-btn:active { transform: scale(0.94); }
         .send-btn.pulsing { animation: sendFlash 300ms ease; }
         .send-btn:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
+        .spin-icon { animation: spin 0.9s linear infinite; }
 
         .msg-image-wrap { position: relative; max-width: 260px; max-height: 320px; overflow: hidden; cursor: pointer; display: block; line-height: 0; }
         .msg-image { width: 100%; max-width: 260px; max-height: 320px; object-fit: cover; display: block; border-radius: inherit; }
@@ -2323,7 +2352,7 @@ function Chat({ username, onLogout }) {
         )}
 
         <div
-          className="sidebar"
+          className={`sidebar ${isTablet ? 'sidebar-rail' : ''}`}
           ref={sidebarRef}
           style={sidebarDynamicStyle}
           onPointerDown={handleDragStart}
@@ -2352,6 +2381,7 @@ function Chat({ username, onLogout }) {
             <span>Channels</span>
           </div>
           <div className={`channel-item ${activeRoom === 'general' ? 'active' : ''}`}
+            title="general"
             onClick={() => { setActiveRoom('general'); setActiveDMUser(null); setUnreadBoundaryCount(prev => ({ ...prev, general: unreadCount })); setUnreadCount(0); }}>
             <span className="channel-icon"><HashIcon size={16} /></span>
             <div className="channel-info">
@@ -2381,6 +2411,7 @@ function Chat({ username, onLogout }) {
             return (
               <div key={user.username}
                 className={`dm-item ${activeDMUser === user.username && activeRoom === 'dm' ? 'active' : ''}`}
+                title={user.username}
                 onClick={() => openDM(user.username)}>
                 <div className="dm-avatar" style={{ background: user.avatar_color || '#667eea' }}>
                   {user.avatar_url
@@ -2457,7 +2488,7 @@ function Chat({ username, onLogout }) {
             <>
               <div className="chat-header">
                 <button className="mobile-back-btn ripple-btn" onClick={backToList} aria-label="Back to chat list">
-                  ←
+                  <ChevronLeftIcon size={18} />
                 </button>
                 {isMobile && (
                   <button
@@ -2482,7 +2513,7 @@ function Chat({ username, onLogout }) {
                   </div>
                   <div className="chat-header-status">
                     <span className="status-dot" style={{ background: isConnected ? '#10b981' : '#ef4444' }}></span>
-                    {isConnected ? (activeRoom === 'general' ? 'Group Chat — Everyone online' : `Private chat`) : 'Connecting...'}
+                    {isConnected ? (activeRoom === 'general' ? <><GlobeIcon size={12} /> Group Chat — Everyone online</> : `Private chat`) : 'Connecting...'}
                   </div>
                 </div>
                 <div className="msg-count">{currentMessages.filter(m => m.type !== 'system').length} msgs</div>
@@ -2841,9 +2872,9 @@ function Chat({ username, onLogout }) {
                   </div>
                 )}
                 <form className="input-row" onSubmit={sendMessage}>
-                  <button type="button" className={`emoji-btn ${showEmojiPicker ? 'active' : ''}`}
-                    onClick={() => setShowEmojiPicker(!showEmojiPicker)}>😊</button>
-                  <button type="button" className="img-upload-btn" onClick={() => fileInputRef.current?.click()}>📷</button>
+                  <button type="button" className={`emoji-btn ${showEmojiPicker ? 'active' : ''}`} title="Emoji" aria-label="Emoji"
+                    onClick={() => setShowEmojiPicker(!showEmojiPicker)}><SmileIcon size={18} /></button>
+                  <button type="button" className="img-upload-btn" title="Attach image or file" aria-label="Attach image or file" onClick={() => fileInputRef.current?.click()}><CameraIcon size={18} /></button>
                   <input ref={fileInputRef} type="file"
                     accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip,.rar,.txt"
                     style={{ display: 'none' }} onChange={handleFileInput} />
@@ -2851,8 +2882,8 @@ function Chat({ username, onLogout }) {
                     className="msg-input" type="text"
                     placeholder={!isConnected ? '⚠️ Reconnecting...' : imageFile ? 'Add a caption...' : activeRoom === 'general' ? 'Message #general...' : `Message ${activeDMUser}...`}
                     value={input} onChange={handleInputChange} disabled={!isConnected} />
-                  <button type="submit" className={`send-btn ripple-btn ${sendPulse ? 'pulsing' : ''}`} disabled={uploading || !isConnected}>
-                    {uploading ? '⏳' : !isConnected ? '⚡' : '➤'}
+                  <button type="submit" className={`send-btn ripple-btn ${sendPulse ? 'pulsing' : ''}`} disabled={uploading || !isConnected} aria-label="Send message">
+                    {uploading ? <Loader2Icon size={18} className="spin-icon" /> : <SendIcon size={18} />}
                   </button>
                 </form>
               </div>
