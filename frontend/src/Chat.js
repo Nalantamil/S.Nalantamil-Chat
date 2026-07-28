@@ -67,10 +67,11 @@ const ChevronLeftIcon = (p) => <Icon {...p}><path d="m15 18-6-6 6-6" /></Icon>;
 const Volume2Icon = (p) => <Icon {...p}><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" /><path d="M15.5 8.5a5 5 0 0 1 0 7" /><path d="M18.5 5.5a9 9 0 0 1 0 13" /></Icon>;
 const VolumeXIcon = (p) => <Icon {...p}><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" /><line x1="23" y1="9" x2="17" y2="15" /><line x1="17" y1="9" x2="23" y2="15" /></Icon>;
 const MoreVerticalIcon = (p) => <Icon {...p}><circle cx="12" cy="5" r="1.2" /><circle cx="12" cy="12" r="1.2" /><circle cx="12" cy="19" r="1.2" /></Icon>;
-const CheckIcon = (p) => <Icon {...p}><path d="M20 6 9 17l-5-5" /></Icon>;
 const ChevronDownIcon = (p) => <Icon {...p}><path d="m6 9 6 6 6-6" /></Icon>;
 const MessageCircleIcon = (p) => <Icon {...p}><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z" /></Icon>;
 const Loader2Icon = (p) => <Icon {...p}><path d="M21 12a9 9 0 1 1-6.219-8.56" /></Icon>;
+const UserPlusIcon = (p) => <Icon {...p}><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><line x1="19" y1="8" x2="19" y2="14" /><line x1="22" y1="11" x2="16" y2="11" /></Icon>;
+const AtSignIcon = (p) => <Icon {...p}><circle cx="12" cy="12" r="4" /><path d="M16 12v1.5a2.5 2.5 0 0 0 5 0V12a9 9 0 1 0-5.5 8.3" /></Icon>;
 
 function Chat({ username, onLogout }) {
   const [messages, setMessages] = useState([]);
@@ -204,6 +205,8 @@ function Chat({ username, onLogout }) {
   // ===== NOTIFICATION CENTER (replies to you + mentions, derived client-side) =====
   const [notifCenterItems, setNotifCenterItems] = useState([]);
   const [showNotifCenter, setShowNotifCenter] = useState(false);
+  const notifPanelRef = useRef(null);
+  const notifBellBtnRef = useRef(null);
 
   // ===== BROWSER NOTIFICATION PERMISSION BANNER =====
   const [showPermissionBanner, setShowPermissionBanner] = useState(false);
@@ -341,7 +344,7 @@ function Chat({ username, onLogout }) {
   // whether consecutive messages from the same sender within 3 minutes should be
   // visually grouped (name shown once, avatar shown once at the bottom of the run).
   // Does not touch message data, socket events, or state management. =====
-  const GROUP_WINDOW_MS = 3 * 60 * 1000;
+  const GROUP_WINDOW_MS = 5 * 60 * 1000;
   const isGroupedWithPrev = (msgs, index) => {
     if (index <= 0) return false;
     const prev = msgs[index - 1];
@@ -471,15 +474,28 @@ function Chat({ username, onLogout }) {
 
     socket.on('message', (msg) => {
       setMessages(prev => [...prev, { ...msg, reactions: {} }]);
+
+      // System messages (joins/leaves) surface only in the notification center,
+      // deduped so a reconnect storm doesn't spam 4 identical entries.
+      if (msg.type === 'system') {
+        const actorMatch = msg.text?.match(/^(.+?) (joined|left)/i);
+        const actor = actorMatch ? actorMatch[1] : (msg.username || 'Someone');
+        const verb = actorMatch ? actorMatch[2].toLowerCase() : 'joined';
+        pushNotifCenterItem({ type: 'join', sender: actor, action: `${verb} the chat`, roomKey: 'general', target: () => { setActiveRoom('general'); setActiveDMUser(null); } });
+        return;
+      }
+
       if (msg.username !== username) {
         const isActive = activeRoom === 'general' && isTabFocused && document.visibilityState === 'visible';
         if (!isActive) setUnreadCount(prev => prev + 1);
         if (!isActive && shouldNotifyFor('general', msg)) {
           const preview = msg.text?.startsWith('__IMAGE__') ? '🖼️ Photo' : msg.text?.startsWith('__FILE__') ? '📎 File' : msg.text;
-          pushToast({ sender: msg.username, preview, roomKey: 'general', target: () => { setActiveRoom('general'); setActiveDMUser(null); } });
-          pushNotifCenterItem({ type: 'message', sender: msg.username, preview, roomKey: 'general', target: () => { setActiveRoom('general'); setActiveDMUser(null); } });
+          const isMention = msg.text?.includes('@' + username) || msg.reply_to?.username === username;
+          const target = () => { setActiveRoom('general'); setActiveDMUser(null); };
+          pushToast({ sender: msg.username, preview, roomKey: 'general', target });
+          pushNotifCenterItem({ type: isMention ? 'mention' : 'message', sender: msg.username, action: isMention ? 'mentioned you' : 'sent a message', preview, roomKey: 'general', target });
           if (notifSettingsRef.current.sound) playNotifSound();
-          fireBrowserNotification('general', msg.username, preview, () => { setActiveRoom('general'); setActiveDMUser(null); });
+          fireBrowserNotification('general', msg.username, preview, target);
         }
       }
     });
@@ -497,10 +513,11 @@ function Chat({ username, onLogout }) {
           setUnreadDMs(prev => ({ ...prev, [roomId]: (prev[roomId] || 0) + 1 }));
           if (shouldNotifyFor(roomId, msg)) {
             const preview = msg.text?.startsWith('__IMAGE__') ? '🖼️ Photo' : msg.text?.startsWith('__FILE__') ? '📎 File' : msg.text;
-            pushToast({ sender: msg.username, preview, roomKey: roomId, target: () => openDM(msg.username) });
-            pushNotifCenterItem({ type: 'dm', sender: msg.username, preview, roomKey: roomId, target: () => openDM(msg.username) });
+            const target = () => openDM(msg.username);
+            pushToast({ sender: msg.username, preview, roomKey: roomId, target });
+            pushNotifCenterItem({ type: 'message', sender: msg.username, action: 'sent you a message', preview, roomKey: roomId, target });
             if (notifSettingsRef.current.sound) playNotifSound();
-            fireBrowserNotification(roomId, msg.username, preview, () => openDM(msg.username));
+            fireBrowserNotification(roomId, msg.username, preview, target);
           }
         }
       }
@@ -1049,8 +1066,70 @@ function Chat({ username, onLogout }) {
   };
 
   const pushNotifCenterItem = (item) => {
-    setNotifCenterItems(prev => [{ id: Date.now() + Math.random(), read: false, ...item }, ...prev].slice(0, 30));
+    setNotifCenterItems(prev => {
+      const [first, ...rest] = prev;
+      // Collapse repeated join/leave events for the same actor (e.g. reconnect
+      // storms) into one entry with a count badge instead of spamming the list.
+      if (item.type === 'join' && first && first.type === 'join' && first.sender === item.sender && first.action === item.action) {
+        return [{ ...first, count: (first.count || 1) + 1, read: false, createdAt: Date.now() }, ...rest];
+      }
+      return [{ id: Date.now() + Math.random(), read: false, count: 1, createdAt: Date.now(), ...item }, ...prev].slice(0, 30);
+    });
   };
+
+  const formatRelativeTime = (ts) => {
+    const diffSec = Math.floor((Date.now() - ts) / 1000);
+    if (diffSec < 60) return 'now';
+    if (diffSec < 3600) return `${Math.floor(diffSec / 60)}m`;
+    if (diffSec < 86400) return `${Math.floor(diffSec / 3600)}h`;
+    return `${Math.floor(diffSec / 86400)}d`;
+  };
+
+  // ===== NOTIFICATION POPOVER — outside click, Escape, and a lightweight focus
+  // trap while open; focus returns to the bell button when it closes. =====
+  useEffect(() => {
+    if (!showNotifCenter) return;
+    const handleClickOutside = (e) => {
+      if (notifPanelRef.current && !notifPanelRef.current.contains(e.target) &&
+          notifBellBtnRef.current && !notifBellBtnRef.current.contains(e.target)) {
+        setShowNotifCenter(false);
+      }
+    };
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') { setShowNotifCenter(false); return; }
+      if (e.key === 'Tab' && notifPanelRef.current) {
+        const focusables = notifPanelRef.current.querySelectorAll('button, [href], input, [tabindex]:not([tabindex="-1"])');
+        if (focusables.length === 0) return;
+        const first = focusables[0], last = focusables[focusables.length - 1];
+        if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+        else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleKeyDown);
+    const focusTimer = setTimeout(() => {
+      notifPanelRef.current?.querySelector('button, [href], input, [tabindex]:not([tabindex="-1"])')?.focus();
+    }, 0);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleKeyDown);
+      clearTimeout(focusTimer);
+    };
+  }, [showNotifCenter]);
+
+  const prevShowNotifCenterRef = useRef(false);
+  useEffect(() => {
+    if (prevShowNotifCenterRef.current && !showNotifCenter) {
+      notifBellBtnRef.current?.focus();
+    }
+    prevShowNotifCenterRef.current = showNotifCenter;
+  }, [showNotifCenter]);
+
+  // Close the popover on route change (switching channel/DM).
+  useEffect(() => {
+    setShowNotifCenter(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeRoom, activeDMUser]);
 
   // Requests Notification permission — called lazily on first message SEND
   // (never on page load). Shows a dismissible inline banner first instead of
@@ -1316,6 +1395,24 @@ function Chat({ username, onLogout }) {
       <style>{`
         * { margin: 0; padding: 0; box-sizing: border-box; }
 
+        :root {
+          --surface-1: #0d0d1a;
+          --surface-2: #111120;
+          --surface-3: #1c1c32;
+          --surface-4: #2a2a45;
+          --border: rgba(255,255,255,0.08);
+          --border-strong: rgba(255,255,255,0.16);
+          --foreground: #f1f5f9;
+          --muted-foreground: #94a3b8;
+          --faint-foreground: #475569;
+          --accent: #6366f1;
+          --accent-2: #8b5cf6;
+          --accent-foreground: #ffffff;
+          --accent-subtle: rgba(99,102,241,0.14);
+          --success: #10b981;
+          --destructive: #ef4444;
+        }
+
         @keyframes gradientShift {
           0% { background-position: 0% 50%; }
           50% { background-position: 100% 50%; }
@@ -1462,10 +1559,10 @@ function Chat({ username, onLogout }) {
         .logo-name { font-size: 16px; font-weight: 700; letter-spacing: -0.02em; color: #f1f5f9; }
 
         .sidebar-search-wrap { margin: 12px 12px 8px; position: relative; z-index: 1; }
-        .sidebar-search-icon { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: #334155; font-size: 13px; pointer-events: none; }
+        .sidebar-search-icon { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--muted-foreground); pointer-events: none; display: flex; }
         .sidebar-search-input {
           width: 100%; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.07);
-          border-radius: 10px; padding: 8px 12px 8px 32px; color: #94a3b8; font-size: 13px;
+          border-radius: 10px; padding: 8px 12px 8px 36px; color: #94a3b8; font-size: 13px;
           outline: none; transition: all 200ms;
         }
         .sidebar-search-input::placeholder { color: #334155; }
@@ -1695,7 +1792,8 @@ function Chat({ username, onLogout }) {
         .unpin-btn { background: none; border: none; color: rgba(255,255,255,0.3); font-size: 13px; cursor: pointer; }
         .unpin-btn:hover { color: #ef4444; }
 
-        .messages-area { flex: 1; overflow-y: auto; padding: 18px 22px; display: flex; flex-direction: column; gap: 3px; scroll-behavior: smooth; }
+        .messages-area { flex: 1; overflow-y: auto; padding: 18px 0; display: flex; flex-direction: column; scroll-behavior: smooth; }
+        .thread-container { max-width: 820px; margin-inline: auto; width: 100%; padding-inline: 24px; display: flex; flex-direction: column; gap: 3px; }
         .messages-area::-webkit-scrollbar { width: 4px; }
         .messages-area::-webkit-scrollbar-thumb { background: transparent; border-radius: 3px; transition: background 0.2s; }
         .messages-area:hover::-webkit-scrollbar-thumb { background: rgba(99,102,241,0.4); }
@@ -1706,14 +1804,14 @@ function Chat({ username, onLogout }) {
 
         .system-msg { text-align: center; color: rgba(255,255,255,0.28); font-size: 11px; padding: 3px 10px; background: rgba(255,255,255,0.03); border-radius: 20px; align-self: center; margin: 4px 0; }
 
-        .msg-row { display: flex; gap: 8px; max-width: 65%; position: relative; margin-top: 10px; }
+        .msg-row { display: flex; align-items: flex-start; gap: 8px; max-width: 68%; position: relative; margin-top: 10px; }
         .msg-row.grouped { margin-top: 2px; }
-        .msg-row.mine { align-self: flex-end; flex-direction: row-reverse; max-width: 55%; animation: slideInRight 220ms cubic-bezier(0.34, 1.56, 0.64, 1); }
-        .msg-row.theirs { align-self: flex-start; max-width: 55%; animation: slideInLeft 220ms cubic-bezier(0.34, 1.56, 0.64, 1); }
+        .msg-row.mine { align-self: flex-end; flex-direction: row-reverse; max-width: 68%; animation: slideInRight 220ms cubic-bezier(0.34, 1.56, 0.64, 1); }
+        .msg-row.theirs { align-self: flex-start; max-width: 68%; animation: slideInLeft 220ms cubic-bezier(0.34, 1.56, 0.64, 1); }
 
-        .msg-avatar { width: 32px; height: 32px; border-radius: 50%; background: linear-gradient(135deg, #a78bfa, #8b5cf6); display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; color: white; flex-shrink: 0; align-self: flex-end; overflow: hidden; padding: 0; }
+        .msg-avatar { width: 32px; height: 32px; border-radius: 50%; background: linear-gradient(135deg, #a78bfa, #8b5cf6); display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; color: white; flex-shrink: 0; align-self: flex-start; overflow: hidden; padding: 0; }
         .msg-row.mine .msg-avatar { background: linear-gradient(135deg, #6366f1, #8b5cf6); }
-        .msg-avatar-spacer { width: 32px; flex-shrink: 0; }
+        .msg-avatar-spacer { width: 32px; flex-shrink: 0; align-self: flex-start; }
 
         .msg-content { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
         .msg-row.mine .msg-content { align-items: flex-end; }
@@ -1784,6 +1882,7 @@ function Chat({ username, onLogout }) {
         .empty-sub { font-size: 12px; color: rgba(255,255,255,0.22); }
 
         .input-area { padding: 12px 16px; background: rgba(13,13,26,0.95); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border-top: 1px solid rgba(255,255,255,0.06); position: relative; }
+        .composer-inner { max-width: 820px; margin-inline: auto; width: 100%; }
 
         .image-preview-bar { padding: 7px 9px; background: rgba(99,102,241,0.09); border: 1px solid rgba(99,102,241,0.18); border-radius: 9px; margin-bottom: 7px; display: flex; align-items: center; gap: 9px; }
         .preview-img { width: 48px; height: 48px; object-fit: cover; border-radius: 7px; }
@@ -2004,6 +2103,204 @@ function Chat({ username, onLogout }) {
         }
         .crop-apply-btn:hover { box-shadow: 0 0 16px rgba(99,102,241,0.5); }
 
+        /* ===== HEADER BELL UNREAD DOT ===== */
+        .header-btn-dot {
+          position: absolute; top: 4px; right: 4px;
+          width: 7px; height: 7px; border-radius: 50%;
+          background: var(--destructive);
+          box-shadow: 0 0 0 2px #0d0d1a;
+        }
+        .header-btn { position: relative; }
+
+        /* ===== CONVERSATION OVERFLOW MENU (mute toggle) ===== */
+        .convo-menu-dropdown {
+          position: absolute; top: calc(100% + 8px); right: 0;
+          width: 200px; z-index: 60;
+          background: var(--surface-2); border: 1px solid var(--border);
+          border-radius: 12px; box-shadow: 0 16px 40px rgba(0,0,0,0.5);
+          overflow: hidden; padding: 4px;
+        }
+        .convo-menu-item {
+          width: 100%; display: flex; align-items: center; gap: 9px;
+          background: none; border: none; color: var(--foreground);
+          font-size: 13px; padding: 9px 10px; border-radius: 8px;
+          cursor: pointer; text-align: left; transition: background 120ms;
+        }
+        .convo-menu-item:hover { background: var(--surface-3); }
+
+        /* ===== NOTIFICATION POPOVER ===== */
+        .notif-panel {
+          position: absolute; top: calc(100% + 8px); right: 0;
+          width: 360px; max-width: calc(100vw - 32px);
+          background: var(--surface-2);
+          border: 1px solid var(--border);
+          border-radius: 14px;
+          box-shadow: 0 16px 48px rgba(0,0,0,0.5);
+          z-index: 60;
+          overflow: hidden;
+          animation: modalSpringIn 180ms cubic-bezier(0.34,1.56,0.64,1);
+        }
+        .notif-panel-header {
+          display: flex; align-items: center; justify-content: space-between;
+          padding: 14px 16px;
+          border-bottom: 1px solid var(--border);
+        }
+        .notif-panel-title { font-size: 15px; font-weight: 600; color: var(--foreground); }
+        .notif-panel-header-actions { display: flex; align-items: center; gap: 10px; }
+        .notif-panel-gear-btn {
+          width: 28px; height: 28px; border-radius: 8px;
+          background: none; border: none; color: var(--muted-foreground);
+          display: flex; align-items: center; justify-content: center;
+          cursor: pointer; transition: all 150ms;
+        }
+        .notif-panel-gear-btn:hover { background: var(--surface-3); color: var(--foreground); }
+        .notif-panel-markread-btn {
+          background: none; border: none; color: var(--accent);
+          font-size: 13px; font-weight: 500; cursor: pointer; padding: 4px 0;
+        }
+        .notif-panel-markread-btn:hover { text-decoration: underline; }
+
+        .notif-panel-list { max-height: 420px; overflow-y: auto; }
+        .notif-panel-list::-webkit-scrollbar { width: 4px; }
+        .notif-panel-list::-webkit-scrollbar-thumb { background: rgba(99,102,241,0.3); border-radius: 3px; }
+
+        .notif-panel-item {
+          display: flex; align-items: flex-start; gap: 12px;
+          padding: 12px 16px; min-height: 44px;
+          border-bottom: 1px solid var(--border);
+          cursor: pointer; position: relative;
+          transition: background 120ms;
+        }
+        .notif-panel-item:last-child { border-bottom: none; }
+        .notif-panel-item:hover { background: var(--surface-3); }
+        .notif-panel-item.unread { background: var(--accent-subtle); }
+        .notif-panel-item.unread::before {
+          content: ''; position: absolute; left: 6px; top: 20px;
+          width: 6px; height: 6px; border-radius: 50%; background: var(--accent);
+        }
+        .notif-panel-icon {
+          width: 32px; height: 32px; border-radius: 50%; flex-shrink: 0;
+          display: flex; align-items: center; justify-content: center;
+        }
+        .notif-panel-icon.type-join { background: rgba(148,163,184,0.18); color: #94a3b8; }
+        .notif-panel-icon.type-message { background: rgba(99,102,241,0.18); color: #818cf8; }
+        .notif-panel-icon.type-mention { background: rgba(236,72,153,0.18); color: #f472b6; }
+        .notif-panel-body { flex: 1; min-width: 0; }
+        .notif-panel-text { font-size: 13px; color: var(--muted-foreground); line-height: 1.4; }
+        .notif-panel-text strong { color: var(--foreground); font-weight: 600; }
+        .notif-panel-count { color: var(--muted-foreground); font-size: 12px; margin-left: 4px; }
+        .notif-panel-preview {
+          font-size: 12px; color: var(--faint-foreground); margin-top: 2px;
+          white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .notif-panel-time { font-size: 11px; color: var(--faint-foreground); flex-shrink: 0; margin-top: 2px; }
+        .notif-panel-empty {
+          display: flex; flex-direction: column; align-items: center; justify-content: center;
+          gap: 10px; padding: 48px 20px; color: var(--muted-foreground); font-size: 13px;
+        }
+
+        @media (max-width: 767px) {
+          .notif-panel {
+            position: fixed; inset: auto 0 0 0; width: 100%; max-width: 100%;
+            border-radius: 16px 16px 0 0;
+            max-height: 70vh;
+            animation: bottomSheetIn 0.3s cubic-bezier(0.16,1,0.3,1);
+          }
+          .notif-panel-list { max-height: calc(70vh - 56px); }
+        }
+
+        /* ===== NOTIFICATION SETTINGS DIALOG ===== */
+        .settings-overlay {
+          position: fixed; inset: 0; z-index: 9999;
+          background: rgba(0,0,0,0.6);
+          backdrop-filter: blur(4px);
+          display: flex; align-items: center; justify-content: center;
+          animation: fadeIn 150ms ease;
+        }
+        .settings-dialog {
+          width: min(440px, calc(100vw - 32px));
+          background: var(--surface-2);
+          border: 1px solid var(--border);
+          border-radius: 16px;
+          padding: 24px;
+          box-shadow: 0 32px 64px rgba(0,0,0,0.6);
+          animation: modalSpringIn 180ms cubic-bezier(0.34,1.56,0.64,1);
+        }
+        .settings-dialog-header {
+          display: flex; align-items: center; justify-content: space-between;
+          padding-bottom: 16px; margin-bottom: 16px;
+          border-bottom: 1px solid var(--border);
+        }
+        .settings-dialog-title { display: flex; align-items: center; gap: 8px; font-size: 17px; font-weight: 600; color: var(--foreground); }
+        .settings-dialog-close-btn {
+          width: 36px; height: 36px; border-radius: 50%;
+          background: none; border: none; color: var(--muted-foreground);
+          display: flex; align-items: center; justify-content: center;
+          cursor: pointer; transition: all 150ms;
+        }
+        .settings-dialog-close-btn:hover { background: var(--surface-3); color: var(--foreground); }
+        .settings-dialog-body { display: flex; flex-direction: column; gap: 16px; }
+        .settings-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+        .settings-row-label { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--foreground); }
+        .settings-dialog-footer {
+          display: flex; justify-content: flex-end;
+          margin-top: 20px; padding-top: 16px;
+          border-top: 1px solid var(--border);
+        }
+        .settings-done-btn {
+          background: linear-gradient(135deg, var(--accent), var(--accent-2));
+          color: white; border: none; padding: 9px 22px;
+          border-radius: 10px; font-size: 13px; font-weight: 600; cursor: pointer;
+          transition: all 150ms;
+        }
+        .settings-done-btn:hover { filter: brightness(1.08); }
+
+        /* ===== TOGGLE SWITCH ===== */
+        .toggle-switch {
+          width: 44px; height: 24px; border-radius: 12px;
+          background: var(--surface-4); border: none; cursor: pointer;
+          position: relative; flex-shrink: 0;
+          transition: background 180ms ease;
+        }
+        .toggle-switch.on { background: linear-gradient(135deg, var(--accent), var(--accent-2)); }
+        .toggle-switch-thumb {
+          position: absolute; top: 2px; left: 2px;
+          width: 20px; height: 20px; border-radius: 50%;
+          background: white;
+          transition: transform 180ms ease;
+        }
+        .toggle-switch.on .toggle-switch-thumb { transform: translateX(20px); }
+        .toggle-switch:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+        /* ===== SEGMENTED CONTROL (Notify me about) ===== */
+        .segmented-control {
+          position: relative;
+          display: flex;
+          background: var(--surface-3);
+          border-radius: 10px;
+          padding: 3px;
+        }
+        .segmented-indicator {
+          position: absolute; top: 3px; left: 3px;
+          width: calc(33.333% - 2px); height: calc(100% - 6px);
+          border-radius: 8px;
+          background: linear-gradient(135deg, var(--accent), var(--accent-2));
+          transition: transform 150ms ease-out;
+        }
+        .segmented-option {
+          flex: 1; position: relative; z-index: 1;
+          text-align: center; padding: 8px 4px;
+          font-size: 12.5px; font-weight: 600;
+          color: var(--muted-foreground); cursor: pointer;
+          border-radius: 8px; transition: color 150ms ease;
+        }
+        .segmented-option.active { color: white; }
+        .segmented-option input {
+          position: absolute; opacity: 0; width: 1px; height: 1px; pointer-events: none;
+        }
+        .segmented-option input:focus-visible ~ * ,
+        .segmented-option:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
+
         .lock-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.82); z-index: 99999; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(7px); }
         .lock-modal { background: rgba(12,12,32,0.99); border: 1px solid rgba(255,215,0,0.18); border-radius: 18px; padding: 26px; width: 340px; max-width: 92vw; text-align: center; }
         .lock-icon { font-size: 48px; margin-bottom: 10px; }
@@ -2039,7 +2336,8 @@ function Chat({ username, onLogout }) {
           .msg-count { display: none !important; }
           .header-btn { width: 28px !important; height: 28px !important; font-size: 13px !important; }
 
-          .messages-area { padding: 10px !important; }
+          .messages-area { padding: 10px 0 !important; }
+          .thread-container { padding-inline: 10px !important; }
           .msg-row, .msg-row.mine, .msg-row.theirs { max-width: 85% !important; }
           .msg-bubble { font-size: 13px !important; padding: 8px 12px !important; }
           .msg-image, .msg-image-wrap { max-width: 200px !important; }
@@ -2284,53 +2582,54 @@ function Chat({ username, onLogout }) {
       )}
 
       {showSettingsPanel && (
-        <div className="profile-overlay" onClick={(e) => e.target === e.currentTarget && setShowSettingsPanel(false)}>
-          <div className="settings-modal">
-            <div className="pm-header">
-              <div className="pm-header-left"><SettingsIcon size={16} /><span>Notification Settings</span></div>
-              <button className="pm-close-btn" onClick={() => setShowSettingsPanel(false)}><XIcon size={18} /></button>
+        <div className="settings-overlay" onClick={(e) => e.target === e.currentTarget && setShowSettingsPanel(false)}
+          onKeyDown={(e) => { if (e.key === 'Escape') setShowSettingsPanel(false); }}>
+          <div className="settings-dialog" role="dialog" aria-label="Notification Settings">
+            <div className="settings-dialog-header">
+              <div className="settings-dialog-title"><SettingsIcon size={17} /><span>Notification Settings</span></div>
+              <button className="settings-dialog-close-btn" onClick={() => setShowSettingsPanel(false)} aria-label="Close"><XIcon size={18} /></button>
             </div>
-            <div className="settings-body">
+
+            <div className="settings-dialog-body">
               <div className="settings-row">
                 <div className="settings-row-label"><BellIcon size={16} /> Desktop notifications</div>
-                <button className={`settings-toggle ${notifSettings.desktop ? 'on' : ''}`}
-                  onClick={() => setNotifSettings(prev => ({ ...prev, desktop: !prev.desktop }))}><span className="settings-toggle-knob" /></button>
+                <button className={`toggle-switch ${notifSettings.desktop ? 'on' : ''}`} role="switch" aria-checked={notifSettings.desktop}
+                  onClick={() => setNotifSettings(prev => ({ ...prev, desktop: !prev.desktop }))}><span className="toggle-switch-thumb" /></button>
               </div>
+
               <div className="settings-row">
                 <div className="settings-row-label"><Volume2Icon size={16} /> Sound</div>
-                <button className={`settings-toggle ${notifSettings.sound ? 'on' : ''}`}
-                  onClick={() => setNotifSettings(prev => ({ ...prev, sound: !prev.sound }))}><span className="settings-toggle-knob" /></button>
+                <button className={`toggle-switch ${notifSettings.sound ? 'on' : ''}`} role="switch" aria-checked={notifSettings.sound}
+                  onClick={() => setNotifSettings(prev => ({ ...prev, sound: !prev.sound }))}><span className="toggle-switch-thumb" /></button>
               </div>
-              <div className="settings-divider" />
-              <div className="settings-row-label" style={{ marginBottom: '8px' }}>Notify for</div>
-              <div className="settings-radio-group">
-                {[['all', 'All messages'], ['mentions', 'Mentions only'], ['none', 'Nothing']].map(([val, label]) => (
-                  <button key={val} className={`settings-radio ${notifSettings.notifyFor === val ? 'selected' : ''}`}
-                    onClick={() => setNotifSettings(prev => ({ ...prev, notifyFor: val }))}>
-                    {notifSettings.notifyFor === val && <CheckIcon size={13} />} {label}
-                  </button>
-                ))}
+
+              <div className="settings-row" style={{ alignItems: 'flex-start', flexDirection: 'column', gap: '8px' }}>
+                <div className="settings-row-label">Notify me about</div>
+                <div className="segmented-control" style={{ width: '100%' }}>
+                  <div className="segmented-indicator" style={{ transform: `translateX(${['all', 'mentions', 'none'].indexOf(notifSettings.notifyFor) * 100}%)` }}></div>
+                  {[['all', 'All messages'], ['mentions', 'Mentions only'], ['none', 'Nothing']].map(([val, label]) => (
+                    <label key={val} className={`segmented-option ${notifSettings.notifyFor === val ? 'active' : ''}`}>
+                      <input type="radio" name="notifyFor" value={val} checked={notifSettings.notifyFor === val}
+                        onChange={() => setNotifSettings(prev => ({ ...prev, notifyFor: val }))} />
+                      {label}
+                    </label>
+                  ))}
+                </div>
               </div>
-              <div className="settings-divider" />
-              <div className="settings-row">
-                <div className="settings-row-label"><BellOffIcon size={16} /> Do Not Disturb</div>
-                <button className={`settings-toggle ${notifSettings.dndEnabled ? 'on' : ''}`}
-                  onClick={() => setNotifSettings(prev => ({ ...prev, dndEnabled: !prev.dndEnabled }))}><span className="settings-toggle-knob" /></button>
-              </div>
-              {notifSettings.dndEnabled && (
-                <div className="settings-dnd-times">
-                  <div>
-                    <label className="pm-field-label">From</label>
-                    <input type="time" className="pm-input" value={notifSettings.dndStart}
-                      onChange={(e) => setNotifSettings(prev => ({ ...prev, dndStart: e.target.value }))} />
+
+              {currentRoomId && (
+                <div className="settings-row">
+                  <div className="settings-row-label">
+                    {mutedRooms[currentRoomId] ? <VolumeXIcon size={16} /> : <Volume2Icon size={16} />} Mute this conversation
                   </div>
-                  <div>
-                    <label className="pm-field-label">To</label>
-                    <input type="time" className="pm-input" value={notifSettings.dndEnd}
-                      onChange={(e) => setNotifSettings(prev => ({ ...prev, dndEnd: e.target.value }))} />
-                  </div>
+                  <button className={`toggle-switch ${mutedRooms[currentRoomId] ? 'on' : ''}`} role="switch" aria-checked={!!mutedRooms[currentRoomId]}
+                    onClick={() => setMutedRooms(prev => ({ ...prev, [currentRoomId]: !prev[currentRoomId] }))}><span className="toggle-switch-thumb" /></button>
                 </div>
               )}
+            </div>
+
+            <div className="settings-dialog-footer">
+              <button className="settings-done-btn" onClick={() => setShowSettingsPanel(false)}>Done</button>
             </div>
           </div>
         </div>
@@ -2368,7 +2667,7 @@ function Chat({ username, onLogout }) {
           </div>
 
           <div className="sidebar-search-wrap">
-            <span className="sidebar-search-icon">🔍</span>
+            <span className="sidebar-search-icon"><SearchIcon size={16} /></span>
             <input
               className="sidebar-search-input"
               placeholder="Search"
@@ -2542,11 +2841,49 @@ function Chat({ username, onLogout }) {
                 <button className="header-btn ripple-btn" title="Background" onClick={() => setShowBgPicker(!showBgPicker)}><PaletteIcon size={16} /></button>
 
                 <div style={{ position: 'relative' }}>
-                  <button className={`header-btn ripple-btn ${showNotifCenter ? 'active' : ''}`} title="Notifications"
+                  <button ref={notifBellBtnRef} className={`header-btn ripple-btn ${showNotifCenter ? 'active' : ''}`} title="Notifications"
+                    aria-haspopup="true" aria-expanded={showNotifCenter}
                     onClick={() => setShowNotifCenter(!showNotifCenter)}>
                     <BellIcon size={16} />
                     {notifCenterItems.some(n => !n.read) && <span className="header-btn-dot"></span>}
                   </button>
+
+                  {showNotifCenter && (
+                    <div className="notif-panel" ref={notifPanelRef} role="dialog" aria-label="Notifications">
+                      <div className="notif-panel-header">
+                        <span className="notif-panel-title">Notifications</span>
+                        <div className="notif-panel-header-actions">
+                          <button className="notif-panel-gear-btn" title="Notification settings"
+                            onClick={() => { setShowSettingsPanel(true); setShowNotifCenter(false); }}><SettingsIcon size={14} /></button>
+                          <button className="notif-panel-markread-btn"
+                            onClick={() => setNotifCenterItems(prev => prev.map(n => ({ ...n, read: true })))}>Mark all read</button>
+                        </div>
+                      </div>
+                      <div className="notif-panel-list">
+                        {notifCenterItems.length === 0 ? (
+                          <div className="notif-panel-empty">
+                            <BellOffIcon size={26} />
+                            <span>You're all caught up</span>
+                          </div>
+                        ) : notifCenterItems.map(n => (
+                          <div key={n.id} className={`notif-panel-item ${n.read ? '' : 'unread'}`}
+                            onClick={() => { n.target(); setNotifCenterItems(prev => prev.map(x => x.id === n.id ? { ...x, read: true } : x)); setShowNotifCenter(false); }}>
+                            <div className={`notif-panel-icon type-${n.type}`}>
+                              {n.type === 'join' ? <UserPlusIcon size={15} /> : n.type === 'mention' ? <AtSignIcon size={15} /> : <MessageCircleIcon size={15} />}
+                            </div>
+                            <div className="notif-panel-body">
+                              <div className="notif-panel-text">
+                                <strong>{n.sender}</strong> <span className="notif-panel-action">{n.action}</span>
+                                {n.count > 1 && <span className="notif-panel-count">×{n.count}</span>}
+                              </div>
+                              {n.type !== 'join' && n.preview && <div className="notif-panel-preview">{n.preview}</div>}
+                            </div>
+                            <div className="notif-panel-time">{formatRelativeTime(n.createdAt)}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 <div style={{ position: 'relative' }}>
@@ -2575,32 +2912,6 @@ function Chat({ username, onLogout }) {
                           style={{ background: bg.value }}
                           onClick={() => { setSelectedBg(bg); setShowBgPicker(false); }}>
                           {bg.label}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {showNotifCenter && (
-                  <div className="notif-center-panel">
-                    <div className="notif-center-header">
-                      <span>Notifications</span>
-                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                        <button className="notif-center-settings-btn" title="Notification settings" onClick={() => { setShowSettingsPanel(true); setShowNotifCenter(false); }}><SettingsIcon size={14} /></button>
-                        <button className="notif-center-mark-read" onClick={() => setNotifCenterItems(prev => prev.map(n => ({ ...n, read: true })))}>Mark all read</button>
-                      </div>
-                    </div>
-                    <div className="notif-center-list">
-                      {notifCenterItems.length === 0 ? (
-                        <div className="notif-center-empty">No notifications yet</div>
-                      ) : notifCenterItems.map(n => (
-                        <div key={n.id} className={`notif-center-item ${n.read ? '' : 'unread'}`}
-                          onClick={() => { n.target(); setNotifCenterItems(prev => prev.map(x => x.id === n.id ? { ...x, read: true } : x)); setShowNotifCenter(false); }}>
-                          <div className="notif-center-avatar">{getInitial(n.sender)}</div>
-                          <div className="notif-center-body">
-                            <div className="notif-center-sender">{n.sender}</div>
-                            <div className="notif-center-preview">{n.preview}</div>
-                          </div>
                         </div>
                       ))}
                     </div>
@@ -2637,6 +2948,7 @@ function Chat({ username, onLogout }) {
               )}
 
               <div className="messages-area" ref={messagesAreaRef} onScroll={handleMessagesScroll}>
+                <div className="thread-container">
                 {filteredMessages.length === 0 && searchQuery ? (
                   <div className="no-results">🔍 No messages found for "<strong>{searchQuery}</strong>"</div>
                 ) : filteredMessages.length === 0 ? (
@@ -2684,7 +2996,7 @@ function Chat({ username, onLogout }) {
                           </div>
                         )}
                         <div className={`msg-row ${isMine ? 'mine' : 'theirs'} ${groupedWithPrev ? 'grouped' : ''}`}>
-                          {isLastInGroup ? (
+                          {isFirstInGroup ? (
                             <div className="msg-avatar" style={{ padding: 0, overflow: 'hidden' }}>
                               {isMine && profile.avatar_url
                                 ? <img src={profile.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
@@ -2825,6 +3137,7 @@ function Chat({ username, onLogout }) {
                     </span>
                   </div>
                 )}
+                </div>
                 <div ref={messagesEndRef} />
               </div>
 
@@ -2835,6 +3148,7 @@ function Chat({ username, onLogout }) {
               )}
 
               <div className="input-area">
+                <div className="composer-inner">
                 {replyingTo && (
                   <div className="reply-bar">
                     <div className="reply-bar-content">
@@ -2886,6 +3200,7 @@ function Chat({ username, onLogout }) {
                     {uploading ? <Loader2Icon size={18} className="spin-icon" /> : <SendIcon size={18} />}
                   </button>
                 </form>
+                </div>
               </div>
             </>
           )}
