@@ -196,6 +196,21 @@ function Chat({ username, onLogout }) {
   const [newSinceScroll, setNewSinceScroll] = useState(0);
   const [unreadBoundaryCount, setUnreadBoundaryCount] = useState({});
 
+  // ===== LAST-READ TIMESTAMPS — persisted per conversation per user so unread
+  // counts survive a page reload. =====
+  const [lastReadAt, setLastReadAt] = useState(() => {
+    try {
+      const raw = localStorage.getItem(`last_read_at_${username}`);
+      if (raw) return JSON.parse(raw);
+    } catch (err) {}
+    return {};
+  });
+  const lastReadAtRef = useRef(lastReadAt);
+  useEffect(() => { lastReadAtRef.current = lastReadAt; }, [lastReadAt]);
+  useEffect(() => {
+    try { localStorage.setItem(`last_read_at_${username}`, JSON.stringify(lastReadAt)); } catch (err) {}
+  }, [lastReadAt, username]);
+
   // ===== TOASTS (inactive-conversation message previews) =====
   const [toasts, setToasts] = useState([]);
   const toastIdRef = useRef(0);
@@ -392,7 +407,6 @@ function Chat({ username, onLogout }) {
     setActiveRoom('dm');
     await fetchDMMessages(roomId);
     setUnreadBoundaryCount(prev => ({ ...prev, [roomId]: unreadDMs[roomId] || 0 }));
-    setUnreadDMs(prev => ({ ...prev, [roomId]: 0 }));
   };
 
   // ===== BACK TO LIST =====
@@ -404,6 +418,8 @@ function Chat({ username, onLogout }) {
   // ===== PREFETCH EVERY DM'S HISTORY RIGHT AFTER LOGIN =====
   // Stores both the timestamp (for sorting) and the actual messages (for the
   // "last message" preview under each name), so previews are correct immediately.
+  // Also derives each room's unread count from persisted lastReadAt, so counts
+  // survive a page reload instead of starting back at zero.
   useEffect(() => {
     if (allUsers.length === 0) return;
     allUsers.forEach(async (user) => {
@@ -415,9 +431,18 @@ function Chat({ username, onLogout }) {
           const ts = lastMsg.timestamp ? new Date(lastMsg.timestamp + 'Z').getTime() : 0;
           setDmLastMessage(prev => ({ ...prev, [roomId]: ts }));
           setDmMessages(prev => ({ ...prev, [roomId]: res.data }));
+
+          const boundary = lastReadAtRef.current[roomId] || 0;
+          const unreadFromHistory = res.data.filter(m =>
+            m.username !== username && m.timestamp && new Date(m.timestamp + 'Z').getTime() > boundary
+          ).length;
+          if (unreadFromHistory > 0) {
+            setUnreadDMs(prev => ({ ...prev, [roomId]: Math.max(prev[roomId] || 0, unreadFromHistory) }));
+          }
         }
       } catch (err) {}
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allUsers, username]);
 
   // ===== MAIN STARTUP LOAD + SOCKET WIRING =====
@@ -437,7 +462,14 @@ function Chat({ username, onLogout }) {
       if (cancelled) return;
 
       const [messagesResult, usersResult, profileResult] = results;
-      if (messagesResult.status === 'fulfilled') setMessages(messagesResult.value.data);
+      if (messagesResult.status === 'fulfilled') {
+        setMessages(messagesResult.value.data);
+        const boundary = lastReadAtRef.current.general || 0;
+        const unreadFromHistory = messagesResult.value.data.filter(m =>
+          m.type !== 'system' && m.username !== username && m.timestamp && new Date(m.timestamp + 'Z').getTime() > boundary
+        ).length;
+        if (unreadFromHistory > 0) setUnreadCount(prev => Math.max(prev, unreadFromHistory));
+      }
       if (usersResult.status === 'fulfilled') setAllUsers(usersResult.value.data.filter(u => u.username !== username));
       if (profileResult.status === 'fulfilled') {
         const data = profileResult.value.data;
@@ -569,12 +601,37 @@ function Chat({ username, onLogout }) {
   const prevMsgCountRef = useRef(0);
   const prevRoomIdRef = useRef(null);
 
+  // Marks a conversation read: updates lastReadAt (persisted) and clears its
+  // badge count. Does NOT touch the "new messages" divider — that only clears
+  // when the user actually leaves the conversation (see room-change effect below).
+  const markRoomRead = (roomKey) => {
+    if (!roomKey) return;
+    setLastReadAt(prev => ({ ...prev, [roomKey]: Date.now() }));
+    if (roomKey === 'general') {
+      setUnreadCount(0);
+    } else {
+      setUnreadDMs(prev => (prev[roomKey] ? { ...prev, [roomKey]: 0 } : prev));
+    }
+  };
+
   useEffect(() => {
     if (currentRoomId !== prevRoomIdRef.current) {
+      const leavingRoomId = prevRoomIdRef.current;
+      // The divider is only cleared when leaving the conversation, never just
+      // because the newest message scrolled into view.
+      if (leavingRoomId) {
+        setUnreadBoundaryCount(prev => (prev[leavingRoomId] ? { ...prev, [leavingRoomId]: 0 } : prev));
+      }
       prevRoomIdRef.current = currentRoomId;
       prevMsgCountRef.current = currentMessages.length;
       setScrolledUp(false);
       setNewSinceScroll(0);
+      if (currentRoomId) {
+        // Snap to bottom when entering a conversation; since the newest message
+        // is now visible, mark it read immediately.
+        requestAnimationFrame(() => messagesEndRef.current?.scrollIntoView({ behavior: 'auto' }));
+        markRoomRead(currentRoomId);
+      }
       return;
     }
     const len = currentMessages.length;
@@ -600,9 +657,9 @@ function Chat({ username, onLogout }) {
     setScrolledUp(nowScrolledUp);
     if (!nowScrolledUp) {
       setNewSinceScroll(0);
-      if (currentRoomId) {
-        setUnreadBoundaryCount(prev => (prev[currentRoomId] ? { ...prev, [currentRoomId]: 0 } : prev));
-      }
+      // Mark read once the newest message is actually visible — the divider
+      // itself is left alone; it persists until the conversation is left.
+      if (currentRoomId) markRoomRead(currentRoomId);
     }
   };
 
@@ -2690,24 +2747,33 @@ function Chat({ username, onLogout }) {
           <div className="sidebar-section-title">
             <span>Channels</span>
           </div>
-          <div className={`channel-item ${activeRoom === 'general' ? 'active' : ''}`}
+          <div className={`channel-item ${activeRoom === 'general' ? 'active' : ''} ${unreadCount > 0 ? 'has-unread' : ''}`}
             title="general"
-            onClick={() => { setActiveRoom('general'); setActiveDMUser(null); setUnreadBoundaryCount(prev => ({ ...prev, general: unreadCount })); setUnreadCount(0); }}>
-            <span className="channel-icon"><HashIcon size={16} /></span>
+            onClick={() => { setActiveRoom('general'); setActiveDMUser(null); setUnreadBoundaryCount(prev => ({ ...prev, general: unreadCount })); }}>
+            <span className="channel-icon" style={{ position: 'relative' }}>
+              <HashIcon size={16} />
+              {isTablet && unreadCount > 0 && (
+                <span className="rail-badge" aria-label={`${unreadCount} unread messages`}>{formatUnreadBadge(unreadCount)}</span>
+              )}
+            </span>
             <div className="channel-info">
               <div className="channel-name"># general</div>
               <div className="channel-sub">Everyone is here</div>
             </div>
-            {unreadCount > 0 && (activeRoom !== 'general' || !isTabFocused)
-              ? <div className="channel-badge">{unreadCount}</div>
-              : <div className="online-dot"></div>}
+            {!isTablet && unreadCount > 0 && (activeRoom !== 'general' || !isTabFocused)
+              ? (
+                mutedRooms.general
+                  ? <span className="unread-dot-muted" aria-label={`${unreadCount} unread messages`}></span>
+                  : <span className="unread-pill" aria-label={`${unreadCount} unread messages`}>{formatUnreadBadge(unreadCount)}</span>
+              )
+              : (!isTablet && <div className="online-dot"></div>)}
           </div>
 
           <div className="sidebar-section-title">
             <span>
               Direct Messages
               {totalUnreadDMs > 0 && (
-                <span style={{ marginLeft: '6px', background: '#ef4444', color: 'white', fontSize: '9px', padding: '1px 5px', borderRadius: '9px' }}>{totalUnreadDMs}</span>
+                <span className="unread-pill" style={{ marginLeft: '6px' }} aria-label={`${totalUnreadDMs} unread messages`}>{formatUnreadBadge(totalUnreadDMs)}</span>
               )}
             </span>
           </div>
@@ -2718,9 +2784,10 @@ function Chat({ username, onLogout }) {
             const isLocked = chatLocks[roomId]?.locked;
             const lastTs = dmLastMessage[roomId] || 0;
             const lastPreview = getLastMsgPreview(roomId);
+            const isMuted = !!mutedRooms[roomId];
             return (
               <div key={user.username}
-                className={`dm-item ${activeDMUser === user.username && activeRoom === 'dm' ? 'active' : ''}`}
+                className={`dm-item ${activeDMUser === user.username && activeRoom === 'dm' ? 'active' : ''} ${unread > 0 ? 'has-unread' : ''}`}
                 title={user.username}
                 onClick={() => openDM(user.username)}>
                 <div className="dm-avatar" style={{ background: user.avatar_color || '#667eea' }}>
@@ -2728,6 +2795,9 @@ function Chat({ username, onLogout }) {
                     ? <img src={user.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
                     : getInitial(user.username)}
                   <div className="online-dot-wrap"><span className="online-dot"></span></div>
+                  {isTablet && unread > 0 && (
+                    <span className="rail-badge" aria-label={`${unread} unread messages`}>{formatUnreadBadge(unread)}</span>
+                  )}
                 </div>
                 <div className="dm-info">
                   <div className="dm-name-row">
@@ -2740,10 +2810,10 @@ function Chat({ username, onLogout }) {
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
                       {isLocked && <span className="dm-lock-icon"><LockIcon size={11} /></span>}
-                      {unread > 0 && (
-                        <div style={{ background: '#10b981', color: 'white', fontSize: '10px', fontWeight: '800', minWidth: '18px', height: '18px', borderRadius: '9px', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 4px', boxShadow: '0 0 6px rgba(16,185,129,0.6)' }}>
-                          {unread}
-                        </div>
+                      {!isTablet && unread > 0 && (
+                        isMuted
+                          ? <span className="unread-dot-muted" aria-label={`${unread} unread messages`}></span>
+                          : <span className="unread-pill" aria-label={`${unread} unread messages`}>{formatUnreadBadge(unread)}</span>
                       )}
                     </div>
                   </div>
