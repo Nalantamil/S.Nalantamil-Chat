@@ -663,8 +663,14 @@ function Chat({ username, onLogout }) {
     }
   };
 
+  const unreadDividerRef = useRef(null);
+
   const jumpToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (unreadDividerRef.current) {
+      unreadDividerRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    } else {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
     setNewSinceScroll(0);
     setScrolledUp(false);
   };
@@ -1302,6 +1308,7 @@ function Chat({ username, onLogout }) {
   };
 
   const getInitial = (name) => name ? name[0].toUpperCase() : '?';
+  const formatUnreadBadge = (n) => (n > 99 ? '99+' : String(n));
   const filteredMessages = searchQuery.trim()
     ? currentMessages.filter(m => m.type !== 'system' && m.text?.toLowerCase().includes(searchQuery.toLowerCase()))
     : currentMessages;
@@ -1639,6 +1646,53 @@ function Chat({ username, onLogout }) {
         .channel-item.active .channel-name { color: #f1f5f9; font-weight: 500; }
         .channel-sub { font-size: 10px; color: rgba(255,255,255,0.28); margin-top: 1px; }
         .channel-badge { background: #6366f1; color: white; font-size: 11px; font-weight: 700; min-width: 20px; height: 20px; border-radius: 10px; display: flex; align-items: center; justify-content: center; padding: 0 5px; animation: badgePop 300ms ease; }
+
+        /* ===== UNREAD BADGES (sidebar rows + bell + DM total) ===== */
+        .unread-pill {
+          background: linear-gradient(135deg, #6366f1, #8b5cf6);
+          color: white; font-size: 11px; font-weight: 600;
+          min-width: 20px; height: 20px; border-radius: 10px;
+          display: inline-flex; align-items: center; justify-content: center;
+          padding: 0 6px; line-height: 1; flex-shrink: 0;
+          animation: badgePop 300ms ease;
+        }
+        .unread-dot-muted {
+          width: 6px; height: 6px; border-radius: 50%;
+          background: rgba(148,163,184,0.6);
+          display: inline-block; flex-shrink: 0;
+        }
+        .rail-badge {
+          position: absolute; top: -4px; right: -6px;
+          background: linear-gradient(135deg, #6366f1, #8b5cf6);
+          color: white; font-size: 9px; font-weight: 700;
+          min-width: 16px; height: 16px; border-radius: 8px;
+          display: flex; align-items: center; justify-content: center;
+          padding: 0 3px; line-height: 1; z-index: 2;
+          box-shadow: 0 0 0 2px #0d0d1a;
+        }
+        .channel-item.has-unread .channel-name { font-weight: 600; color: #f1f5f9; }
+        .dm-item.has-unread .dm-name { font-weight: 700; color: #f1f5f9; }
+
+        /* ===== "NEW MESSAGES" DIVIDER ===== */
+        .unread-divider { display: flex; align-items: center; gap: 10px; margin: 12px 0; }
+        .unread-divider-line { flex: 1; height: 1px; background: #6366f1; }
+        .unread-divider-label {
+          font-size: 11px; font-weight: 600; color: #6366f1;
+          padding: 2px 10px; background: #111120;
+          white-space: nowrap; border-radius: 20px;
+        }
+
+        /* ===== JUMP-TO-NEW PILL ===== */
+        .jump-pill {
+          align-self: center; margin: -8px 0 8px;
+          display: flex; align-items: center; gap: 6px;
+          background: linear-gradient(135deg, #6366f1, #8b5cf6);
+          color: white; font-size: 12px; font-weight: 600;
+          padding: 8px 16px; border-radius: 20px; border: none;
+          cursor: pointer; box-shadow: 0 8px 24px rgba(99,102,241,0.4);
+          z-index: 15; animation: fadeIn 200ms ease;
+        }
+        .jump-pill:hover { filter: brightness(1.08); }
 
         .dm-item { margin: 1px 8px; padding: 8px 10px; border-radius: 10px; display: flex; align-items: center; gap: 10px; cursor: pointer; transition: all 180ms; border-left: 2px solid transparent; position: relative; z-index: 1; }
         .dm-item:hover { background: rgba(99,102,241,0.07); border-left-color: rgba(99,102,241,0.3); transform: translateX(2px); }
@@ -2166,6 +2220,12 @@ function Chat({ username, onLogout }) {
           position: absolute; top: 4px; right: 4px;
           width: 7px; height: 7px; border-radius: 50%;
           background: var(--destructive);
+          box-shadow: 0 0 0 2px #0d0d1a;
+        }
+        .header-btn-dot-left { left: 4px; right: auto; }
+        .header-unread-badge {
+          position: absolute; top: -6px; right: -6px;
+          min-width: 17px; height: 17px; font-size: 10px; padding: 0 4px;
           box-shadow: 0 0 0 2px #0d0d1a;
         }
         .header-btn { position: relative; }
@@ -2926,7 +2986,12 @@ function Chat({ username, onLogout }) {
                     aria-haspopup="true" aria-expanded={showNotifCenter}
                     onClick={() => setShowNotifCenter(!showNotifCenter)}>
                     <BellIcon size={16} />
-                    {notifCenterItems.some(n => !n.read) && <span className="header-btn-dot"></span>}
+                    {notifCenterItems.some(n => !n.read) && <span className="header-btn-dot header-btn-dot-left"></span>}
+                    {(unreadCount + totalUnreadDMs) > 0 && (
+                      <span className="unread-pill header-unread-badge" aria-label={`${unreadCount + totalUnreadDMs} unread messages`}>
+                        {formatUnreadBadge(unreadCount + totalUnreadDMs)}
+                      </span>
+                    )}
                   </button>
 
                   {showNotifCenter && (
@@ -3063,9 +3128,9 @@ function Chat({ username, onLogout }) {
                     return (
                       <React.Fragment key={msg._id || index}>
                         {showUnreadDivider && (
-                          <div className="unread-divider">
+                          <div className="unread-divider" role="separator" aria-label="New messages" ref={unreadDividerRef}>
                             <span className="unread-divider-line"></span>
-                            <span className="unread-divider-label">{unreadBoundaryCount[currentRoomId]} new message{unreadBoundaryCount[currentRoomId] > 1 ? 's' : ''}</span>
+                            <span className="unread-divider-label">New messages</span>
                             <span className="unread-divider-line"></span>
                           </div>
                         )}
@@ -3223,7 +3288,7 @@ function Chat({ username, onLogout }) {
               </div>
 
               {scrolledUp && newSinceScroll > 0 && (
-                <button className="jump-pill" onClick={jumpToBottom}>
+                <button className="jump-pill" onClick={jumpToBottom} aria-label={`Jump to ${newSinceScroll} new message${newSinceScroll > 1 ? 's' : ''}`}>
                   <ChevronDownIcon size={14} /> {newSinceScroll} new message{newSinceScroll > 1 ? 's' : ''}
                 </button>
               )}
