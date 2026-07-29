@@ -34,8 +34,6 @@ const EMOJI_LIST = [
   '🔥','⭐','✨','💫','🎉','🎊','🎈','🎁','🏆','🎯',
 ];
 
-const AVATAR_COLORS = ['#667eea','#e74c3c','#2ecc71','#f39c12','#e91e63','#00bcd4','#9c27b0','#ff5722'];
-
 const getDMRoomId = (user1, user2) => [user1, user2].sort().join('__dm__');
 
 // ===== ICONS — inline SVGs matching Lucide's paths/stroke-width (no new npm
@@ -1999,15 +1997,13 @@ function Chat({ username, onLogout }) {
         }
         .pm-avatar-wrap {
           width: 88px; height: 88px; border-radius: 50%;
-          border: 2.5px solid rgba(99,102,241,0.5);
-          box-shadow: 0 0 20px rgba(99,102,241,0.2);
           cursor: pointer; overflow: hidden;
           display: flex; align-items: center; justify-content: center;
           font-size: 30px; font-weight: 700; color: white;
-          transition: all 200ms;
+          transition: transform 200ms;
           position: relative;
         }
-        .pm-avatar-wrap:hover { border-color: #6366f1; transform: scale(1.03); }
+        .pm-avatar-wrap:hover { transform: scale(1.03); }
         .pm-avatar-wrap img { width: 100%; height: 100%; object-fit: cover; }
         .pm-edit-label {
           font-size: 11px; color: #6366f1; text-transform: uppercase; letter-spacing: 0.08em;
@@ -2015,14 +2011,19 @@ function Chat({ username, onLogout }) {
         }
         .pm-edit-label:hover { color: #818cf8; }
         .pm-divider { height: 1px; width: 100%; background: rgba(255,255,255,0.06); }
-        .pm-color-label { font-size: 11px; color: #475569; text-transform: uppercase; letter-spacing: 0.08em; align-self: flex-start; }
-        .pm-color-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
-        .pm-color-btn {
-          width: 28px; height: 28px; border-radius: 50%; cursor: pointer;
-          border: none; transition: all 0.2s;
+
+        /* ===== MOBILE PROFILE PREVIEW CARD — hidden on desktop, shown <768px ===== */
+        .pm-mobile-card { display: none; }
+        .pm-mobile-avatar {
+          width: 80px; height: 80px; min-width: 80px; min-height: 80px;
+          border-radius: 50%; overflow: hidden; flex-shrink: 0;
+          cursor: pointer; display: flex; align-items: center; justify-content: center;
         }
-        .pm-color-btn:hover { transform: scale(1.3); box-shadow: 0 0 10px 3px currentColor; }
-        .pm-color-btn.selected { outline: 2px solid white; outline-offset: 2px; }
+        .pm-mobile-avatar img { width: 100%; height: 100%; object-fit: cover; display: block; border-radius: 50%; }
+        .pm-mobile-avatar span { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; color: white; font-size: 26px; font-weight: 700; border-radius: 50%; }
+        .pm-mobile-identity { min-width: 0; flex: 1; }
+        .pm-mobile-username { font-size: 16px; font-weight: 700; color: #f1f5f9; }
+        .pm-mobile-bio { font-size: 13px; color: #94a3b8; margin-top: 3px; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 
         .pm-right-panel { display: flex; flex-direction: column; gap: 0; min-width: 0; }
         .pm-section-label { font-size: 10px; color: #334155; text-transform: uppercase; letter-spacing: 0.12em; margin-bottom: 8px; }
@@ -2360,6 +2361,7 @@ function Chat({ username, onLogout }) {
             border-radius: 20px 20px 0 0 !important;
             animation: bottomSheetIn 0.3s cubic-bezier(0.16,1,0.3,1) !important;
             position: relative;
+            overflow-x: hidden;
           }
           .profile-modal::before {
             content: '';
@@ -2369,10 +2371,16 @@ function Chat({ username, onLogout }) {
             border-radius: 2px;
             margin: 8px auto;
           }
-          .pm-body { grid-template-columns: 1fr !important; padding: 16px !important; }
-          .pm-left-panel { flex-direction: row !important; align-items: center !important; padding: 14px !important; }
-          .pm-color-grid { margin-left: auto; }
-          .pm-edit-label { display: none; }
+          .pm-mobile-card {
+            display: flex; align-items: center; gap: 14px;
+            padding: 0 16px 16px;
+          }
+          .pm-left-panel { display: none; }
+          .pm-body { grid-template-columns: 1fr !important; padding: 0 16px 16px !important; gap: 0 !important; }
+          .pm-right-panel { gap: 0; }
+          .pm-footer { flex-direction: column-reverse !important; align-items: stretch !important; gap: 10px !important; padding: 12px 16px 16px !important; }
+          .pm-footer-note { text-align: center; }
+          .pm-save-btn { width: 100%; justify-content: center; }
           .online-dot { width: 9px !important; height: 9px !important; }
 
           .send-btn { min-width: 44px !important; min-height: 44px !important; }
@@ -2475,6 +2483,18 @@ function Chat({ username, onLogout }) {
               <button className="pm-close-btn" onClick={() => setShowProfile(false)}><XIcon size={16} /></button>
             </div>
 
+            <div className="pm-mobile-card">
+              <div className="pm-mobile-avatar" onClick={() => document.getElementById('avatar-upload').click()}>
+                {profileEdit.avatar_url
+                  ? <img src={profileEdit.avatar_url} alt="" />
+                  : <span style={{ background: profileEdit.avatar_color }}>{getInitial(username)}</span>}
+              </div>
+              <div className="pm-mobile-identity">
+                <div className="pm-mobile-username">{username}</div>
+                <div className="pm-mobile-bio">{profileEdit.bio || 'No bio yet'}</div>
+              </div>
+            </div>
+
             <div className="pm-body">
               <div className="pm-left-panel">
                 <div className="pm-avatar-wrap"
@@ -2486,15 +2506,6 @@ function Chat({ username, onLogout }) {
                 </div>
                 <div className="pm-edit-label" onClick={() => document.getElementById('avatar-upload').click()}>Edit Photo</div>
                 <input id="avatar-upload" type="file" accept="image/*" style={{ display: 'none' }} onChange={handleAvatarFileSelect} />
-
-                <div className="pm-divider" />
-                <div className="pm-color-label">AVATAR COLOR</div>
-                <div className="pm-color-grid">
-                  {AVATAR_COLORS.map(color => (
-                    <button key={color} type="button" className={`pm-color-btn ${profileEdit.avatar_color === color ? 'selected' : ''}`}
-                      style={{ background: color, color }} onClick={() => setProfileEdit(prev => ({ ...prev, avatar_color: color }))} />
-                  ))}
-                </div>
               </div>
 
               <div className="pm-right-panel">
