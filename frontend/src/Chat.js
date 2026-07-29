@@ -506,12 +506,15 @@ function Chat({ username, onLogout }) {
       setMessages(prev => [...prev, { ...msg, reactions: {} }]);
 
       // System messages (joins/leaves) surface only in the notification center,
-      // deduped so a reconnect storm doesn't spam 4 identical entries.
+      // deduped so a reconnect storm doesn't spam 4 identical entries. Your own
+      // joins/reconnects are never shown to you.
       if (msg.type === 'system') {
         const actorMatch = msg.text?.match(/^(.+?) (joined|left)/i);
         const actor = actorMatch ? actorMatch[1] : (msg.username || 'Someone');
         const verb = actorMatch ? actorMatch[2].toLowerCase() : 'joined';
-        pushNotifCenterItem({ type: 'join', sender: actor, action: `${verb} the chat`, roomKey: 'general', target: () => { setActiveRoom('general'); setActiveDMUser(null); } });
+        if (actor !== username) {
+          pushNotifCenterItem({ type: 'join', sender: actor, action: `${verb} the chat`, roomKey: 'general', target: () => { setActiveRoom('general'); setActiveDMUser(null); } });
+        }
         return;
       }
 
