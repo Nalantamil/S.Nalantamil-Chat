@@ -73,6 +73,11 @@ const MoreVerticalIcon = (p) => <Icon {...p}><circle cx="12" cy="5" r="1.2" /><c
 const ChevronDownIcon = (p) => <Icon {...p}><path d="m6 9 6 6 6-6" /></Icon>;
 const MessageCircleIcon = (p) => <Icon {...p}><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z" /></Icon>;
 const Loader2Icon = (p) => <Icon {...p}><path d="M21 12a9 9 0 1 1-6.219-8.56" /></Icon>;
+const PlusIcon = (p) => <Icon {...p}><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></Icon>;
+const TrashIcon = (p) => <Icon {...p}><path d="M3 6h18" /><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><line x1="10" y1="11" x2="10" y2="17" /><line x1="14" y1="11" x2="14" y2="17" /></Icon>;
+const CheckIcon = (p) => <Icon {...p}><path d="M20 6 9 17l-5-5" /></Icon>;
+const UsersIcon = (p) => <Icon {...p}><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></Icon>;
+const PencilIcon = (p) => <Icon {...p}><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" /></Icon>;
 const UserPlusIcon = (p) => <Icon {...p}><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><line x1="19" y1="8" x2="19" y2="14" /><line x1="22" y1="11" x2="16" y2="11" /></Icon>;
 const AtSignIcon = (p) => <Icon {...p}><circle cx="12" cy="12" r="4" /><path d="M16 12v1.5a2.5 2.5 0 0 0 5 0V12a9 9 0 1 0-5.5 8.3" /></Icon>;
 
@@ -145,6 +150,38 @@ function Chat({ username, onLogout }) {
 
   // ===== DM SORT TRACKING =====
   const [dmLastMessage, setDmLastMessage] = useState({});
+
+  // ===== GROUP CHAT STATE =====
+  const [groups, setGroups] = useState([]);
+  const [groupMessages, setGroupMessages] = useState({});
+  const [groupLastMessage, setGroupLastMessage] = useState({});
+  const [activeGroupId, setActiveGroupId] = useState(null);
+  const [unreadGroups, setUnreadGroups] = useState({});
+
+  const [showCreateGroupModal, setShowCreateGroupModal] = useState(false);
+  const [createGroupStep, setCreateGroupStep] = useState(1);
+  const [createGroupName, setCreateGroupName] = useState('');
+  const [createGroupDescription, setCreateGroupDescription] = useState('');
+  const [createGroupColor, setCreateGroupColor] = useState(GROUP_AVATAR_COLORS[0]);
+  const [createGroupErrors, setCreateGroupErrors] = useState({});
+  const [createGroupSelectedUsers, setCreateGroupSelectedUsers] = useState([]);
+  const [createGroupSearchQuery, setCreateGroupSearchQuery] = useState('');
+  const [creatingGroup, setCreatingGroup] = useState(false);
+
+  const [showAddPeopleModal, setShowAddPeopleModal] = useState(false);
+  const [addPeopleSelected, setAddPeopleSelected] = useState([]);
+  const [addPeopleSearchQuery, setAddPeopleSearchQuery] = useState('');
+  const [addingPeople, setAddingPeople] = useState(false);
+
+  const [showGroupInfoPanel, setShowGroupInfoPanel] = useState(false);
+  const [groupInfoDetail, setGroupInfoDetail] = useState(null);
+  const [editingGroupName, setEditingGroupName] = useState(false);
+  const [groupNameDraft, setGroupNameDraft] = useState('');
+  const [editingGroupDesc, setEditingGroupDesc] = useState(false);
+  const [groupDescDraft, setGroupDescDraft] = useState('');
+  const [memberMenuOpenFor, setMemberMenuOpenFor] = useState(null);
+  const [confirmAction, setConfirmAction] = useState(null);
+  const [visibleMemberCount, setVisibleMemberCount] = useState(20);
 
   // ===== SIDEBAR SEARCH (filters the Direct Messages list only — visual/UI addition,
   // does not touch channel logic, sockets, or data fetching) =====
@@ -243,13 +280,19 @@ function Chat({ username, onLogout }) {
 
   const currentRoomId = activeRoom === 'general'
     ? 'general'
-    : (activeRoom === 'dm' && activeDMUser ? getDMRoomId(username, activeDMUser) : null);
+    : activeRoom === 'dm' && activeDMUser ? getDMRoomId(username, activeDMUser)
+    : activeRoom === 'group' && activeGroupId ? groupRoomId(activeGroupId)
+    : null;
 
   const currentMessages = useMemo(() => {
     if (activeRoom === 'general') return messages;
     if (activeRoom === 'dm') return dmMessages[currentRoomId] || [];
+    if (activeRoom === 'group') return groupMessages[activeGroupId] || [];
     return [];
-  }, [activeRoom, messages, dmMessages, currentRoomId]);
+  }, [activeRoom, messages, dmMessages, groupMessages, activeGroupId, currentRoomId]);
+
+  // ===== SORTED GROUPS (most recent activity first) =====
+  const sortedGroups = [...groups].sort((a, b) => (groupLastMessage[b._id] || 0) - (groupLastMessage[a._id] || 0));
 
   // ===== SORTED DM USERS (WhatsApp-style, most recent first) =====
   const sortedUsers = [...allUsers].sort((a, b) => {
@@ -414,10 +457,185 @@ function Chat({ username, onLogout }) {
     setUnreadBoundaryCount(prev => ({ ...prev, [roomId]: unreadDMs[roomId] || 0 }));
   };
 
+  // ===== GROUP CHAT =====
+  const openGroup = (groupId) => {
+    setActiveGroupId(groupId);
+    setActiveRoom('group');
+    setUnreadBoundaryCount(prev => ({ ...prev, [groupRoomId(groupId)]: unreadGroups[groupId] || 0 }));
+  };
+
+  const myRoleInGroup = (group) => group?.members?.find(m => m.username === username)?.role;
+
+  const openCreateGroupModal = () => {
+    setCreateGroupStep(1);
+    setCreateGroupName('');
+    setCreateGroupDescription('');
+    setCreateGroupColor(GROUP_AVATAR_COLORS[0]);
+    setCreateGroupErrors({});
+    setCreateGroupSelectedUsers([]);
+    setCreateGroupSearchQuery('');
+    setShowCreateGroupModal(true);
+  };
+
+  const validateCreateGroupDetails = () => {
+    const errs = {};
+    const trimmed = createGroupName.trim();
+    if (trimmed.length < 2 || trimmed.length > 40) errs.name = 'Group name must be 2-40 characters';
+    if (createGroupDescription.length > 140) errs.description = 'Description must be 140 characters or fewer';
+    setCreateGroupErrors(errs);
+    return Object.keys(errs).length === 0;
+  };
+
+  const submitCreateGroup = async () => {
+    if (!validateCreateGroupDetails()) { setCreateGroupStep(1); return; }
+    setCreatingGroup(true);
+    try {
+      const res = await axios.post('https://s-nalantamil-chat.onrender.com/groups', {
+        name: createGroupName.trim(),
+        description: createGroupDescription,
+        avatar_color: createGroupColor,
+        created_by: username,
+        member_usernames: createGroupSelectedUsers,
+      });
+      socket.emit('join_group', { group_id: res.data._id });
+      setGroups(prev => [...prev, res.data]);
+      setShowCreateGroupModal(false);
+      openGroup(res.data._id);
+    } catch (err) {
+      setCreateGroupErrors({ submit: err.response?.data?.error || 'Failed to create group' });
+    }
+    setCreatingGroup(false);
+  };
+
+  const refreshGroupInfo = async (groupId) => {
+    try {
+      const res = await axios.get(`https://s-nalantamil-chat.onrender.com/groups/${groupId}/info`);
+      setGroupInfoDetail(res.data);
+    } catch (err) {}
+  };
+
+  const openGroupInfoPanel = async () => {
+    setVisibleMemberCount(20);
+    await refreshGroupInfo(activeGroupId);
+    setShowGroupInfoPanel(true);
+  };
+
+  const openAddPeopleModal = () => {
+    setAddPeopleSelected([]);
+    setAddPeopleSearchQuery('');
+    setShowAddPeopleModal(true);
+  };
+
+  const submitAddPeople = async () => {
+    if (addPeopleSelected.length === 0 || !groupInfoDetail) return;
+    setAddingPeople(true);
+    try {
+      const res = await axios.post(`https://s-nalantamil-chat.onrender.com/groups/${groupInfoDetail._id}/members`, {
+        added_by: username, usernames: addPeopleSelected,
+      });
+      setGroups(prev => prev.map(g => g._id === groupInfoDetail._id ? { ...g, member_count: res.data.member_count } : g));
+      await refreshGroupInfo(groupInfoDetail._id);
+      setShowAddPeopleModal(false);
+    } catch (err) {
+      alert(err.response?.data?.error || 'Failed to add people');
+    }
+    setAddingPeople(false);
+  };
+
+  const startEditGroupName = () => { setGroupNameDraft(groupInfoDetail.name); setEditingGroupName(true); };
+  const saveGroupName = async () => {
+    const trimmed = groupNameDraft.trim();
+    if (trimmed.length < 2 || trimmed.length > 40) return;
+    try {
+      const res = await axios.patch(`https://s-nalantamil-chat.onrender.com/groups/${groupInfoDetail._id}`, { changed_by: username, name: trimmed });
+      setGroupInfoDetail(prev => ({ ...prev, name: res.data.name }));
+      setGroups(prev => prev.map(g => g._id === groupInfoDetail._id ? { ...g, name: res.data.name } : g));
+      setEditingGroupName(false);
+    } catch (err) { alert(err.response?.data?.error || 'Failed to update group name'); }
+  };
+
+  const startEditGroupDesc = () => { setGroupDescDraft(groupInfoDetail.description || ''); setEditingGroupDesc(true); };
+  const saveGroupDescription = async () => {
+    try {
+      const res = await axios.patch(`https://s-nalantamil-chat.onrender.com/groups/${groupInfoDetail._id}`, { changed_by: username, description: groupDescDraft });
+      setGroupInfoDetail(prev => ({ ...prev, description: res.data.description }));
+      setEditingGroupDesc(false);
+    } catch (err) { alert(err.response?.data?.error || 'Failed to update description'); }
+  };
+
+  const promoteMember = async (targetUsername, newRole) => {
+    setMemberMenuOpenFor(null);
+    try {
+      await axios.patch(`https://s-nalantamil-chat.onrender.com/groups/${groupInfoDetail._id}/members/${targetUsername}/role`, { changed_by: username, role: newRole });
+      await refreshGroupInfo(groupInfoDetail._id);
+    } catch (err) { alert(err.response?.data?.error || 'Failed to update role'); }
+  };
+
+  const removeMember = (targetUsername) => {
+    setMemberMenuOpenFor(null);
+    setConfirmAction({
+      title: 'Remove member',
+      message: `Remove ${targetUsername} from ${groupInfoDetail.name}?`,
+      confirmLabel: 'Remove',
+      destructive: true,
+      onConfirm: async () => {
+        try {
+          await axios.delete(`https://s-nalantamil-chat.onrender.com/groups/${groupInfoDetail._id}/members/${targetUsername}`, { data: { removed_by: username } });
+          await refreshGroupInfo(groupInfoDetail._id);
+        } catch (err) { alert(err.response?.data?.error || 'Failed to remove member'); }
+        setConfirmAction(null);
+      },
+    });
+  };
+
+  const leaveGroup = () => {
+    setConfirmAction({
+      title: 'Leave group',
+      message: `Leave ${groupInfoDetail.name}? You'll need to be re-added to rejoin.`,
+      confirmLabel: 'Leave group',
+      destructive: true,
+      onConfirm: async () => {
+        try {
+          await axios.delete(`https://s-nalantamil-chat.onrender.com/groups/${groupInfoDetail._id}/members/${username}`, { data: { removed_by: username } });
+          setGroups(prev => prev.filter(g => g._id !== groupInfoDetail._id));
+          setShowGroupInfoPanel(false);
+          setActiveRoom(null);
+          setActiveGroupId(null);
+        } catch (err) { alert(err.response?.data?.error || 'Failed to leave group'); }
+        setConfirmAction(null);
+      },
+    });
+  };
+
+  const deleteGroupPermanently = () => {
+    setConfirmAction({
+      title: 'Delete group',
+      message: `Permanently delete ${groupInfoDetail.name}? This can't be undone.`,
+      confirmLabel: 'Delete group',
+      destructive: true,
+      onConfirm: async () => {
+        try {
+          await axios.delete(`https://s-nalantamil-chat.onrender.com/groups/${groupInfoDetail._id}`, { data: { requested_by: username } });
+          setGroups(prev => prev.filter(g => g._id !== groupInfoDetail._id));
+          setShowGroupInfoPanel(false);
+          setActiveRoom(null);
+          setActiveGroupId(null);
+        } catch (err) { alert(err.response?.data?.error || 'Failed to delete group'); }
+        setConfirmAction(null);
+      },
+    });
+  };
+
+  const toggleGroupMute = (groupId) => {
+    const roomKey = groupRoomId(groupId);
+    setMutedRooms(prev => ({ ...prev, [roomKey]: !prev[roomKey] }));
+  };
+
   // ===== BACK TO LIST =====
   const backToList = () => {
     setActiveRoom(null);
     setActiveDMUser(null);
+    setActiveGroupId(null);
   };
 
   // ===== PREFETCH EVERY DM'S HISTORY RIGHT AFTER LOGIN =====
@@ -450,6 +668,34 @@ function Chat({ username, onLogout }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allUsers, username]);
 
+  // ===== PREFETCH EVERY GROUP'S HISTORY — same pattern as the DM prefetch above:
+  // last-message preview for the sidebar, plus unread count derived from
+  // persisted lastReadAt so it survives a reload. =====
+  useEffect(() => {
+    if (groups.length === 0) return;
+    groups.forEach(async (g) => {
+      const groupId = g._id;
+      try {
+        const res = await axios.get(`https://s-nalantamil-chat.onrender.com/groups/${groupId}/messages`);
+        if (res.data.length > 0) {
+          const lastMsg = res.data[res.data.length - 1];
+          const ts = lastMsg.timestamp ? new Date(lastMsg.timestamp + 'Z').getTime() : 0;
+          setGroupLastMessage(prev => ({ ...prev, [groupId]: ts }));
+          setGroupMessages(prev => ({ ...prev, [groupId]: res.data }));
+
+          const boundary = lastReadAtRef.current[groupRoomId(groupId)] || 0;
+          const unreadFromHistory = res.data.filter(m =>
+            m.type !== 'system' && m.username !== username && m.timestamp && new Date(m.timestamp + 'Z').getTime() > boundary
+          ).length;
+          if (unreadFromHistory > 0) {
+            setUnreadGroups(prev => ({ ...prev, [groupId]: Math.max(prev[groupId] || 0, unreadFromHistory) }));
+          }
+        }
+      } catch (err) {}
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [groups, username]);
+
   // ===== MAIN STARTUP LOAD + SOCKET WIRING =====
   useEffect(() => {
     let cancelled = false;
@@ -463,10 +709,11 @@ function Chat({ username, onLogout }) {
         axios.get('https://s-nalantamil-chat.onrender.com/messages'),
         axios.get('https://s-nalantamil-chat.onrender.com/users'),
         axios.get(`https://s-nalantamil-chat.onrender.com/profile/${username}`),
+        axios.get(`https://s-nalantamil-chat.onrender.com/groups/${username}`),
       ]);
       if (cancelled) return;
 
-      const [messagesResult, usersResult, profileResult] = results;
+      const [messagesResult, usersResult, profileResult, groupsResult] = results;
       if (messagesResult.status === 'fulfilled') {
         setMessages(messagesResult.value.data);
         const boundary = lastReadAtRef.current.general || 0;
@@ -481,6 +728,7 @@ function Chat({ username, onLogout }) {
         setProfile(data);
         setProfileEdit({ bio: data.bio || '', avatar_color: data.avatar_color || '#667eea', avatar_url: data.avatar_url || '', current_password: '', new_password: '' });
       }
+      if (groupsResult.status === 'fulfilled') setGroups(groupsResult.value.data);
       setAppLoading(false);
     };
     loadInitialData();
@@ -561,9 +809,75 @@ function Chat({ username, onLogout }) {
       }
     });
 
+    // ===== GROUP MESSAGES =====
+    socket.on('group_message', (msg) => {
+      const groupId = msg.group_id;
+      setGroupMessages(prev => ({
+        ...prev,
+        [groupId]: [...(prev[groupId] || []), { ...msg, reactions: {} }]
+      }));
+      const ts = msg.timestamp ? new Date(msg.timestamp + 'Z').getTime() : Date.now();
+      setGroupLastMessage(prev => ({ ...prev, [groupId]: ts }));
+
+      // System messages (added/removed/left) are shown in-thread only —
+      // no unread bump, toast, sound, or notification for them.
+      if (msg.type === 'system') return;
+
+      const roomId = groupRoomId(groupId);
+      if (roomId !== currentRoomId || activeRoom !== 'group') {
+        if (msg.username !== username) {
+          setUnreadGroups(prev => ({ ...prev, [groupId]: (prev[groupId] || 0) + 1 }));
+          if (shouldNotifyFor(roomId, msg)) {
+            const preview = msg.text?.startsWith('__IMAGE__') ? '🖼️ Photo' : msg.text?.startsWith('__FILE__') ? '📎 File' : msg.text;
+            const target = () => openGroup(groupId);
+            pushToast({ sender: msg.username, preview, roomKey: roomId, target });
+            pushNotifCenterItem({ type: 'message', sender: msg.username, action: 'sent a group message', preview, roomKey: roomId, target });
+            if (notifSettingsRef.current.sound) playNotifSound();
+            fireBrowserNotification(roomId, msg.username, preview, target);
+          }
+        }
+      }
+    });
+
+    socket.on('group_created', (g) => {
+      setGroups(prev => (prev.some(x => x._id === g._id) ? prev : [...prev, g]));
+    });
+    socket.on('group_updated', (g) => {
+      setGroups(prev => prev.map(x => (x._id === g._id ? { ...x, ...g } : x)));
+      setGroupInfoDetail(prev => (prev && prev._id === g._id ? { ...prev, ...g } : prev));
+    });
+    socket.on('group_deleted', ({ group_id }) => {
+      setGroups(prev => prev.filter(g => g._id !== group_id));
+      setActiveGroupId(prevId => {
+        if (prevId === group_id) { setActiveRoom(null); return null; }
+        return prevId;
+      });
+    });
+    socket.on('group_member_added', (g) => {
+      setGroups(prev => prev.map(x => (x._id === g._id ? { ...x, member_count: g.member_count } : x)));
+      setGroupInfoDetail(prev => (prev && prev._id === g._id ? { ...prev, member_count: g.member_count } : prev));
+    });
+    socket.on('group_member_removed', (g) => {
+      if (g.removed_username === username) {
+        setGroups(prev => prev.filter(x => x._id !== g._id));
+        setActiveGroupId(prevId => {
+          if (prevId === g._id) { setActiveRoom(null); return null; }
+          return prevId;
+        });
+      } else {
+        setGroups(prev => prev.map(x => (x._id === g._id ? { ...x, member_count: g.member_count } : x)));
+      }
+      setGroupInfoDetail(prev => (prev && prev._id === g._id ? { ...prev, member_count: g.member_count } : prev));
+    });
+
     socket.on('message_deleted', ({ message_id }) => {
       setMessages(prev => prev.filter(m => m._id !== message_id));
       setDmMessages(prev => {
+        const updated = {};
+        Object.keys(prev).forEach(r => { updated[r] = prev[r].filter(m => m._id !== message_id); });
+        return updated;
+      });
+      setGroupMessages(prev => {
         const updated = {};
         Object.keys(prev).forEach(r => { updated[r] = prev[r].filter(m => m._id !== message_id); });
         return updated;
@@ -577,11 +891,21 @@ function Chat({ username, onLogout }) {
         Object.keys(prev).forEach(r => { updated[r] = prev[r].map(m => m._id === message_id ? { ...m, text, edited: true } : m); });
         return updated;
       });
+      setGroupMessages(prev => {
+        const updated = {};
+        Object.keys(prev).forEach(r => { updated[r] = prev[r].map(m => m._id === message_id ? { ...m, text, edited: true } : m); });
+        return updated;
+      });
     });
 
     socket.on('reaction_updated', ({ message_id, reactions }) => {
       setMessages(prev => prev.map(m => m._id === message_id ? { ...m, reactions } : m));
       setDmMessages(prev => {
+        const updated = {};
+        Object.keys(prev).forEach(r => { updated[r] = prev[r].map(m => m._id === message_id ? { ...m, reactions } : m); });
+        return updated;
+      });
+      setGroupMessages(prev => {
         const updated = {};
         Object.keys(prev).forEach(r => { updated[r] = prev[r].map(m => m._id === message_id ? { ...m, reactions } : m); });
         return updated;
@@ -597,6 +921,8 @@ function Chat({ username, onLogout }) {
       cancelled = true;
       socket.off('connect'); socket.off('disconnect'); socket.off('reconnect_attempt');
       socket.off('reconnect'); socket.off('message'); socket.off('dm_message');
+      socket.off('group_message'); socket.off('group_created'); socket.off('group_updated');
+      socket.off('group_deleted'); socket.off('group_member_added'); socket.off('group_member_removed');
       socket.off('message_deleted'); socket.off('message_edited'); socket.off('reaction_updated');
       socket.off('user_typing'); socket.off('user_stop_typing');
       socket.off('message_pinned'); socket.off('message_unpinned');
@@ -617,6 +943,9 @@ function Chat({ username, onLogout }) {
     setLastReadAt(prev => ({ ...prev, [roomKey]: Date.now() }));
     if (roomKey === 'general') {
       setUnreadCount(0);
+    } else if (roomKey.startsWith('group:')) {
+      const groupId = roomKey.slice('group:'.length);
+      setUnreadGroups(prev => (prev[groupId] ? { ...prev, [groupId]: 0 } : prev));
     } else {
       setUnreadDMs(prev => (prev[roomKey] ? { ...prev, [roomKey]: 0 } : prev));
     }
@@ -735,6 +1064,11 @@ function Chat({ username, onLogout }) {
         username, text: input, room_id: currentRoomId,
         reply_to: replyingTo ? { _id: replyingTo._id, username: replyingTo.username, text: replyingTo.text } : null
       });
+    } else if (activeRoom === 'group') {
+      socket.emit('send_group_message', {
+        group_id: activeGroupId, username, text: input,
+        reply_to: replyingTo ? { _id: replyingTo._id, username: replyingTo.username, text: replyingTo.text } : null
+      });
     }
     socket.emit('stop_typing', { username });
     clearTimeout(typingTimeoutRef.current);
@@ -820,6 +1154,8 @@ function Chat({ username, onLogout }) {
         socket.emit('send_message', { username, text, reply_to: replyData });
       } else if (activeRoom === 'dm') {
         socket.emit('send_dm', { username, text, room_id: currentRoomId, reply_to: replyData });
+      } else if (activeRoom === 'group') {
+        socket.emit('send_group_message', { group_id: activeGroupId, username, text, reply_to: replyData });
       }
       setReplyingTo(null); cancelImage(); setInput('');
     } catch (err) { console.error('Upload failed:', err); }
