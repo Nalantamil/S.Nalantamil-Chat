@@ -35,6 +35,11 @@ const EMOJI_LIST = [
 ];
 
 const getDMRoomId = (user1, user2) => [user1, user2].sort().join('__dm__');
+const groupRoomId = (groupId) => `group:${groupId}`;
+// Reused only for the group-creation avatar swatch row (the per-user Profile
+// Settings color picker was removed at the user's request; this is a
+// separate, group-only palette).
+const GROUP_AVATAR_COLORS = ['#667eea', '#e74c3c', '#2ecc71', '#f39c12', '#e91e63', '#00bcd4', '#9c27b0', '#ff5722'];
 
 // ===== ICONS — inline SVGs matching Lucide's paths/stroke-width (no new npm
 // dependency required). Consistent 1.8 stroke-width, size via prop. =====
