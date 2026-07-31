@@ -78,6 +78,25 @@ const TrashIcon = (p) => <Icon {...p}><path d="M3 6h18" /><path d="M8 6V4a2 2 0 
 const CheckIcon = (p) => <Icon {...p}><path d="M20 6 9 17l-5-5" /></Icon>;
 const UsersIcon = (p) => <Icon {...p}><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></Icon>;
 const PencilIcon = (p) => <Icon {...p}><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" /></Icon>;
+const ImagePlusIcon = (p) => <Icon {...p}><rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="9" cy="9" r="2" /><path d="m21 15-5-5L5 21" /><line x1="16" y1="5" x2="22" y2="5" /><line x1="19" y1="2" x2="19" y2="8" /></Icon>;
+const CameraSmallIcon = (p) => <Icon {...p}><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3Z" /><circle cx="12" cy="13" r="3" /></Icon>;
+
+// ===== SHARED GROUP AVATAR — the single rendering rule used everywhere a group
+// avatar appears (sidebar, header, info panel, modals): image when avatarUrl is
+// set, otherwise the colour fill + first letter. =====
+const GroupAvatar = ({ group, size = 40, radius = 10 }) => {
+  const name = group?.name || '';
+  const initial = name ? name[0].toUpperCase() : '?';
+  const commonStyle = { width: size, height: size, borderRadius: radius, flexShrink: 0, border: '1px solid rgba(255,255,255,0.08)' };
+  if (group?.avatar_url) {
+    return <img src={group.avatar_url} alt={name} style={{ ...commonStyle, objectFit: 'cover' }} />;
+  }
+  return (
+    <div style={{ ...commonStyle, background: group?.avatar_color || '#667eea', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 700, fontSize: Math.max(11, Math.round(size * 0.4)) }}>
+      {initial}
+    </div>
+  );
+};
 const UserPlusIcon = (p) => <Icon {...p}><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><line x1="19" y1="8" x2="19" y2="14" /><line x1="22" y1="11" x2="16" y2="11" /></Icon>;
 const AtSignIcon = (p) => <Icon {...p}><circle cx="12" cy="12" r="4" /><path d="M16 12v1.5a2.5 2.5 0 0 0 5 0V12a9 9 0 1 0-5.5 8.3" /></Icon>;
 
@@ -174,6 +193,19 @@ function Chat({ username, onLogout }) {
   const [addingPeople, setAddingPeople] = useState(false);
 
   const [showGroupInfoPanel, setShowGroupInfoPanel] = useState(false);
+
+  // ===== GROUP AVATAR IMAGE (create-group modal) =====
+  const [createGroupAvatarUrl, setCreateGroupAvatarUrl] = useState('');
+  const [createGroupAvatarUploading, setCreateGroupAvatarUploading] = useState(false);
+  const [createGroupAvatarError, setCreateGroupAvatarError] = useState('');
+  const [createGroupAvatarDragOver, setCreateGroupAvatarDragOver] = useState(false);
+
+  // ===== GROUP AVATAR IMAGE (group info panel) =====
+  const [groupAvatarMenuOpen, setGroupAvatarMenuOpen] = useState(false);
+  const [groupAvatarChangingColor, setGroupAvatarChangingColor] = useState(false);
+  const [groupAvatarColorDraft, setGroupAvatarColorDraft] = useState(GROUP_AVATAR_COLORS[0]);
+  const [groupAvatarUploading, setGroupAvatarUploading] = useState(false);
+  const [groupAvatarError, setGroupAvatarError] = useState('');
   const [groupInfoDetail, setGroupInfoDetail] = useState(null);
   const [editingGroupName, setEditingGroupName] = useState(false);
   const [groupNameDraft, setGroupNameDraft] = useState('');
@@ -471,10 +503,64 @@ function Chat({ username, onLogout }) {
     setCreateGroupName('');
     setCreateGroupDescription('');
     setCreateGroupColor(GROUP_AVATAR_COLORS[0]);
+    setCreateGroupAvatarUrl('');
+    setCreateGroupAvatarError('');
     setCreateGroupErrors({});
     setCreateGroupSelectedUsers([]);
     setCreateGroupSearchQuery('');
     setShowCreateGroupModal(true);
+  };
+
+  // ===== GROUP AVATAR IMAGE: validate, downscale to a 512×512 centre-cropped
+  // square, then upload. Shared by both the create-group modal and the group
+  // info panel's photo management. =====
+  const validateGroupAvatarFile = (file) => {
+    const allowed = ['image/png', 'image/jpeg', 'image/webp'];
+    if (!file || !allowed.includes(file.type) || file.size > 5 * 1024 * 1024) {
+      return 'Use a PNG, JPEG or WebP under 5MB';
+    }
+    return '';
+  };
+
+  const downscaleImageSquare = (file, maxSize = 512) => new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const side = Math.min(img.width, img.height);
+        const sx = (img.width - side) / 2;
+        const sy = (img.height - side) / 2;
+        const outSize = Math.min(maxSize, side);
+        const canvas = document.createElement('canvas');
+        canvas.width = outSize;
+        canvas.height = outSize;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, sx, sy, side, side, 0, 0, outSize, outSize);
+        canvas.toBlob(blob => {
+          if (!blob) { reject(new Error('downscale failed')); return; }
+          resolve(new File([blob], 'group-avatar.jpg', { type: 'image/jpeg' }));
+        }, 'image/jpeg', 0.9);
+      };
+      img.onerror = () => reject(new Error('image load failed'));
+      img.src = e.target.result;
+    };
+    reader.onerror = () => reject(new Error('file read failed'));
+    reader.readAsDataURL(file);
+  });
+
+  const handleCreateGroupAvatarFile = async (file) => {
+    const err = validateGroupAvatarFile(file);
+    if (err) { setCreateGroupAvatarError(err); return; }
+    setCreateGroupAvatarError('');
+    setCreateGroupAvatarUploading(true);
+    try {
+      const downscaled = await downscaleImageSquare(file);
+      const url = await uploadToCloudinary(downscaled);
+      setCreateGroupAvatarUrl(url);
+    } catch (err2) {
+      setCreateGroupAvatarError('Upload failed — try again');
+    }
+    setCreateGroupAvatarUploading(false);
   };
 
   const validateCreateGroupDetails = () => {
@@ -494,6 +580,7 @@ function Chat({ username, onLogout }) {
         name: createGroupName.trim(),
         description: createGroupDescription,
         avatar_color: createGroupColor,
+        avatar_url: createGroupAvatarUrl,
         created_by: username,
         member_usernames: createGroupSelectedUsers,
       });
@@ -516,8 +603,61 @@ function Chat({ username, onLogout }) {
 
   const openGroupInfoPanel = async () => {
     setVisibleMemberCount(20);
+    setGroupAvatarMenuOpen(false);
+    setGroupAvatarChangingColor(false);
+    setGroupAvatarError('');
     await refreshGroupInfo(activeGroupId);
     setShowGroupInfoPanel(true);
+  };
+
+  const uploadGroupPhoto = async (file) => {
+    const err = validateGroupAvatarFile(file);
+    if (err) { setGroupAvatarError(err); return; }
+    setGroupAvatarError('');
+    setGroupAvatarUploading(true);
+    try {
+      const downscaled = await downscaleImageSquare(file);
+      const url = await uploadToCloudinary(downscaled);
+      const res = await axios.patch(`https://s-nalantamil-chat.onrender.com/groups/${groupInfoDetail._id}`, { changed_by: username, avatar_url: url });
+      setGroupInfoDetail(prev => ({ ...prev, avatar_url: res.data.avatar_url }));
+      setGroups(prev => prev.map(g => g._id === groupInfoDetail._id ? { ...g, avatar_url: res.data.avatar_url } : g));
+      setGroupAvatarMenuOpen(false);
+    } catch (err2) {
+      setGroupAvatarError('Upload failed — try again');
+    }
+    setGroupAvatarUploading(false);
+  };
+
+  const removeGroupPhoto = () => {
+    setGroupAvatarMenuOpen(false);
+    setConfirmAction({
+      title: 'Remove group photo',
+      message: 'Remove group photo? The group will fall back to its colour avatar.',
+      confirmLabel: 'Remove',
+      destructive: true,
+      onConfirm: async () => {
+        try {
+          const res = await axios.patch(`https://s-nalantamil-chat.onrender.com/groups/${groupInfoDetail._id}`, { changed_by: username, avatar_url: '' });
+          setGroupInfoDetail(prev => ({ ...prev, avatar_url: res.data.avatar_url }));
+          setGroups(prev => prev.map(g => g._id === groupInfoDetail._id ? { ...g, avatar_url: '' } : g));
+        } catch (err) { alert(err.response?.data?.error || 'Failed to remove photo'); }
+        setConfirmAction(null);
+      },
+    });
+  };
+
+  const startChangeGroupColor = () => {
+    setGroupAvatarColorDraft(groupInfoDetail.avatar_color || GROUP_AVATAR_COLORS[0]);
+    setGroupAvatarChangingColor(true);
+    setGroupAvatarMenuOpen(false);
+  };
+  const saveGroupColorChange = async () => {
+    try {
+      const res = await axios.patch(`https://s-nalantamil-chat.onrender.com/groups/${groupInfoDetail._id}`, { changed_by: username, avatar_color: groupAvatarColorDraft });
+      setGroupInfoDetail(prev => ({ ...prev, avatar_color: res.data.avatar_color || groupAvatarColorDraft }));
+      setGroups(prev => prev.map(g => g._id === groupInfoDetail._id ? { ...g, avatar_color: groupAvatarColorDraft } : g));
+      setGroupAvatarChangingColor(false);
+    } catch (err) { alert('Failed to update colour'); }
   };
 
   const openAddPeopleModal = () => {
@@ -4108,7 +4248,7 @@ function Chat({ username, onLogout }) {
                     style={{ display: 'none' }} onChange={handleFileInput} />
                   <input
                     className="msg-input" type="text"
-                    placeholder={!isConnected ? '⚠️ Reconnecting...' : imageFile ? 'Add a caption...' : activeRoom === 'general' ? 'Message #general...' : `Message ${activeDMUser}...`}
+                    placeholder={!isConnected ? '⚠️ Reconnecting...' : imageFile ? 'Add a caption...' : activeRoom === 'general' ? 'Message #general...' : activeRoom === 'group' ? `Message ${groups.find(g => g._id === activeGroupId)?.name || ''}...` : activeDMUser ? `Message ${activeDMUser}...` : 'Message...'}
                     value={input} onChange={handleInputChange} disabled={!isConnected} />
                   <button type="submit" className={`send-btn ripple-btn ${sendPulse ? 'pulsing' : ''}`} disabled={uploading || !isConnected} aria-label="Send message">
                     {uploading ? <Loader2Icon size={18} className="spin-icon" /> : <SendIcon size={18} />}
