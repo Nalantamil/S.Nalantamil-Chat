@@ -2763,6 +2763,97 @@ function Chat({ username, onLogout }) {
         .segmented-option input:focus-visible ~ * ,
         .segmented-option:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
 
+        /* ===== SHARED SMALL FIELD (search boxes inside group modals) ===== */
+        .field-control {
+          position: relative; display: flex; align-items: center; height: 40px;
+          background: var(--surface-1); border: 1px solid var(--border);
+          border-radius: 10px; transition: border-color 150ms ease;
+        }
+        .field-control:focus-within { border-color: var(--accent); }
+        .field-icon { margin-left: 12px; color: var(--muted-foreground); flex-shrink: 0; }
+        .field-input { flex: 1; min-width: 0; height: 100%; padding: 0 12px; background: transparent; border: none; outline: none; color: var(--foreground); font-size: 13px; }
+        .field-input::placeholder { color: var(--faint-foreground); }
+        .field-error-text { display: flex; align-items: center; gap: 5px; color: var(--destructive); font-size: 12px; margin: 4px 0 8px; }
+
+        /* ===== CHIPS (selected people) ===== */
+        .chip-row { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+        .chip {
+          display: inline-flex; align-items: center; gap: 5px;
+          background: var(--accent-subtle); color: var(--foreground);
+          font-size: 12px; padding: 4px 6px 4px 10px; border-radius: 20px;
+        }
+        .chip button { background: none; border: none; color: var(--muted-foreground); display: flex; align-items: center; cursor: pointer; padding: 2px; }
+        .chip button:hover { color: var(--foreground); }
+
+        /* ===== MEMBER PICKER (create group step 2 / add people) ===== */
+        .member-picker-list { max-height: 260px; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
+        .member-picker-row {
+          display: flex; align-items: center; gap: 10px; padding: 8px 6px;
+          border-radius: 8px; cursor: pointer; transition: background 120ms;
+        }
+        .member-picker-row:hover { background: var(--surface-3); }
+        .member-picker-row input { accent-color: var(--accent); width: 15px; height: 15px; cursor: pointer; }
+        .member-picker-avatar { width: 30px; height: 30px; font-size: 12px; }
+
+        /* ===== CREATE GROUP MODAL — two-step slide ===== */
+        .create-group-dialog { overflow: hidden; padding-bottom: 0; }
+        .create-group-steps-track { position: relative; overflow: hidden; }
+        .create-group-step-pane {
+          transition: transform 220ms ease;
+          width: 100%;
+        }
+        .create-group-step-pane:last-child { position: absolute; top: 0; left: 0; }
+
+        /* ===== GROUP INFO PANEL — right slide-over desktop, bottom sheet mobile ===== */
+        .group-info-overlay {
+          position: fixed; inset: 0; z-index: 9999;
+          background: rgba(0,0,0,0.5);
+          display: flex; justify-content: flex-end;
+          animation: fadeIn 150ms ease;
+        }
+        .group-info-panel {
+          width: 380px; max-width: 92vw; height: 100vh;
+          background: var(--surface-2); border-left: 1px solid var(--border);
+          display: flex; flex-direction: column;
+          animation: slideInRight 220ms ease-out;
+          overflow-y: auto;
+        }
+        .group-info-body { padding: 20px; display: flex; flex-direction: column; gap: 18px; }
+        .group-info-hero { display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center; }
+        .group-info-edit-row { display: flex; align-items: center; gap: 6px; justify-content: center; width: 100%; }
+        .group-info-name { font-size: 17px; font-weight: 700; color: var(--foreground); }
+        .group-info-desc { font-size: 13px; color: var(--muted-foreground); max-width: 300px; }
+        .group-info-members-header { display: flex; align-items: center; justify-content: space-between; font-size: 11px; font-weight: 700; color: var(--faint-foreground); text-transform: uppercase; letter-spacing: 0.08em; }
+
+        .member-list { display: flex; flex-direction: column; gap: 2px; max-height: 320px; overflow-y: auto; }
+        .member-row { display: flex; align-items: center; gap: 10px; padding: 8px 6px; border-radius: 8px; }
+        .member-row:hover, .member-row:focus-visible { background: var(--surface-3); outline: none; }
+        .member-row-name { flex: 1; font-size: 13px; color: var(--foreground); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .member-role-badge { font-size: 10px; font-weight: 700; text-transform: uppercase; padding: 2px 7px; border-radius: 10px; letter-spacing: 0.04em; }
+        .member-role-badge.role-owner { background: rgba(245,158,11,0.15); color: #f59e0b; }
+        .member-role-badge.role-admin { background: rgba(99,102,241,0.15); color: #818cf8; }
+        .member-role-badge.role-member { background: rgba(148,163,184,0.12); color: #94a3b8; }
+
+        .group-info-danger-zone { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; padding-top: 16px; border-top: 1px solid var(--border); }
+        .group-delete-btn {
+          display: flex; align-items: center; justify-content: center; gap: 6px;
+          background: rgba(239,68,68,0.12); border: 1px solid rgba(239,68,68,0.3); color: #ef4444;
+          padding: 9px 18px; border-radius: 10px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 150ms;
+        }
+        .group-delete-btn:hover { background: rgba(239,68,68,0.2); }
+        .group-info-danger-zone .crop-cancel-btn { display: flex; align-items: center; justify-content: center; gap: 6px; }
+
+        @media (max-width: 767px) {
+          .group-info-overlay { align-items: flex-end; }
+          .group-info-panel {
+            width: 100%; max-width: 100%; height: auto; max-height: 88vh;
+            border-left: none; border-radius: 20px 20px 0 0;
+            animation: bottomSheetIn 0.3s cubic-bezier(0.16,1,0.3,1);
+          }
+        }
+
+        .confirm-dialog { width: min(380px, calc(100vw - 32px)); }
+
         .lock-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.82); z-index: 99999; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(7px); }
         .lock-modal { background: rgba(12,12,32,0.99); border: 1px solid rgba(255,215,0,0.18); border-radius: 18px; padding: 26px; width: 340px; max-width: 92vw; text-align: center; }
         .lock-icon { font-size: 48px; margin-bottom: 10px; }
@@ -3107,6 +3198,277 @@ function Chat({ username, onLogout }) {
         </div>
       )}
 
+      {showCreateGroupModal && (
+        <div className="settings-overlay" onClick={(e) => e.target === e.currentTarget && setShowCreateGroupModal(false)}>
+          <div className="settings-dialog create-group-dialog" role="dialog" aria-label="Create group">
+            <div className="settings-dialog-header">
+              <div className="settings-dialog-title"><UsersIcon size={17} /><span>{createGroupStep === 1 ? 'Create Group' : 'Add People'}</span></div>
+              <button className="settings-dialog-close-btn" onClick={() => setShowCreateGroupModal(false)} aria-label="Close"><XIcon size={18} /></button>
+            </div>
+
+            <div className="create-group-steps-track">
+              <div className="create-group-step-pane" style={{ transform: `translateX(${createGroupStep === 1 ? '0' : '-100%'})` }}>
+                <div className="settings-dialog-body">
+                  <div className="pm-field-label">Group name</div>
+                  <input className="pm-input" placeholder="e.g. Weekend Plans" value={createGroupName}
+                    maxLength={40} onChange={(e) => setCreateGroupName(e.target.value)} />
+                  {createGroupErrors.name && <div className="field-error-text">{createGroupErrors.name}</div>}
+
+                  <div className="pm-field-label" style={{ marginTop: '4px' }}>Description (optional)</div>
+                  <input className="pm-input" placeholder="What's this group about?" value={createGroupDescription}
+                    maxLength={140} onChange={(e) => setCreateGroupDescription(e.target.value)} />
+                  {createGroupErrors.description && <div className="field-error-text">{createGroupErrors.description}</div>}
+
+                  <div className="pm-color-label" style={{ marginTop: '8px', marginBottom: '8px' }}>AVATAR COLOR</div>
+                  <div className="pm-color-grid">
+                    {GROUP_AVATAR_COLORS.map(color => (
+                      <button key={color} type="button" className={`pm-color-btn ${createGroupColor === color ? 'selected' : ''}`}
+                        style={{ background: color }} onClick={() => setCreateGroupColor(color)} />
+                    ))}
+                  </div>
+                  {createGroupErrors.submit && <div className="field-error-text">{createGroupErrors.submit}</div>}
+                </div>
+              </div>
+
+              <div className="create-group-step-pane" style={{ transform: `translateX(${createGroupStep === 1 ? '100%' : '0'})` }}>
+                <div className="settings-dialog-body">
+                  {createGroupSelectedUsers.length > 0 && (
+                    <div className="chip-row">
+                      {createGroupSelectedUsers.map(u => (
+                        <span key={u} className="chip">
+                          {u}
+                          <button type="button" onClick={() => setCreateGroupSelectedUsers(prev => prev.filter(x => x !== u))} aria-label={`Remove ${u}`}><XIcon size={11} /></button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  <div className="pm-field-label">{createGroupSelectedUsers.length} selected</div>
+                  <div className="field-control" style={{ marginBottom: '10px' }}>
+                    <SearchIcon size={16} className="field-icon" />
+                    <input className="field-input" placeholder="Search people..." value={createGroupSearchQuery}
+                      onChange={(e) => setCreateGroupSearchQuery(e.target.value)} />
+                  </div>
+                  <div className="member-picker-list">
+                    {allUsers
+                      .filter(u => u.username.toLowerCase().includes(createGroupSearchQuery.trim().toLowerCase()))
+                      .map(u => {
+                        const selected = createGroupSelectedUsers.includes(u.username);
+                        return (
+                          <label key={u.username} className="member-picker-row">
+                            <input type="checkbox" checked={selected} onChange={() => {
+                              setCreateGroupSelectedUsers(prev => selected ? prev.filter(x => x !== u.username) : [...prev, u.username]);
+                            }} />
+                            <span className="dm-avatar member-picker-avatar" style={{ background: u.avatar_color || '#667eea' }}>
+                              {u.avatar_url ? <img src={u.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} /> : getInitial(u.username)}
+                            </span>
+                            <span>{u.username}</span>
+                            {selected && <CheckIcon size={15} style={{ marginLeft: 'auto', color: '#6366f1' }} />}
+                          </label>
+                        );
+                      })}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="settings-dialog-footer" style={{ justifyContent: 'space-between' }}>
+              {createGroupStep === 1 ? (
+                <>
+                  <span />
+                  <button className="settings-done-btn" disabled={createGroupName.trim().length < 2}
+                    onClick={() => { if (validateCreateGroupDetails()) setCreateGroupStep(2); }}>Next: Add People</button>
+                </>
+              ) : (
+                <>
+                  <button className="crop-cancel-btn" style={{ flex: 'none', padding: '9px 18px' }} onClick={() => setCreateGroupStep(1)}>Back</button>
+                  <button className="settings-done-btn" disabled={creatingGroup} onClick={submitCreateGroup}>
+                    {creatingGroup ? <Loader2Icon size={15} className="spin-icon" /> : 'Create group'}
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showAddPeopleModal && groupInfoDetail && (
+        <div className="settings-overlay" onClick={(e) => e.target === e.currentTarget && setShowAddPeopleModal(false)}>
+          <div className="settings-dialog" role="dialog" aria-label="Add people">
+            <div className="settings-dialog-header">
+              <div className="settings-dialog-title"><UserPlusIcon size={17} /><span>Add People</span></div>
+              <button className="settings-dialog-close-btn" onClick={() => setShowAddPeopleModal(false)} aria-label="Close"><XIcon size={18} /></button>
+            </div>
+            <div className="settings-dialog-body">
+              {addPeopleSelected.length > 0 && (
+                <div className="chip-row">
+                  {addPeopleSelected.map(u => (
+                    <span key={u} className="chip">
+                      {u}
+                      <button type="button" onClick={() => setAddPeopleSelected(prev => prev.filter(x => x !== u))} aria-label={`Remove ${u}`}><XIcon size={11} /></button>
+                    </span>
+                  ))}
+                </div>
+              )}
+              <div className="pm-field-label">{addPeopleSelected.length} selected</div>
+              <div className="field-control" style={{ marginBottom: '10px' }}>
+                <SearchIcon size={16} className="field-icon" />
+                <input className="field-input" placeholder="Search people..." value={addPeopleSearchQuery}
+                  onChange={(e) => setAddPeopleSearchQuery(e.target.value)} />
+              </div>
+              <div className="member-picker-list">
+                {allUsers
+                  .filter(u => !groupInfoDetail.members.some(m => m.username === u.username))
+                  .filter(u => u.username.toLowerCase().includes(addPeopleSearchQuery.trim().toLowerCase()))
+                  .map(u => {
+                    const selected = addPeopleSelected.includes(u.username);
+                    return (
+                      <label key={u.username} className="member-picker-row">
+                        <input type="checkbox" checked={selected} onChange={() => {
+                          setAddPeopleSelected(prev => selected ? prev.filter(x => x !== u.username) : [...prev, u.username]);
+                        }} />
+                        <span className="dm-avatar member-picker-avatar" style={{ background: u.avatar_color || '#667eea' }}>
+                          {u.avatar_url ? <img src={u.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} /> : getInitial(u.username)}
+                        </span>
+                        <span>{u.username}</span>
+                        {selected && <CheckIcon size={15} style={{ marginLeft: 'auto', color: '#6366f1' }} />}
+                      </label>
+                    );
+                  })}
+              </div>
+            </div>
+            <div className="settings-dialog-footer">
+              <button className="settings-done-btn" disabled={addPeopleSelected.length === 0 || addingPeople} onClick={submitAddPeople}>
+                {addingPeople ? <Loader2Icon size={15} className="spin-icon" /> : `Add ${addPeopleSelected.length || ''}`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showGroupInfoPanel && groupInfoDetail && (
+        <div className="group-info-overlay" onClick={(e) => e.target === e.currentTarget && setShowGroupInfoPanel(false)}>
+          <div className="group-info-panel" role="dialog" aria-label="Group info">
+            <div className="settings-dialog-header">
+              <div className="settings-dialog-title"><UsersIcon size={17} /><span>Group Info</span></div>
+              <button className="settings-dialog-close-btn" onClick={() => setShowGroupInfoPanel(false)} aria-label="Close"><XIcon size={18} /></button>
+            </div>
+
+            <div className="group-info-body">
+              <div className="group-info-hero">
+                <div className="pm-avatar-wrap" style={{ background: groupInfoDetail.avatar_color, borderRadius: '16px' }}>
+                  {getInitial(groupInfoDetail.name)}
+                </div>
+                {editingGroupName ? (
+                  <div className="group-info-edit-row">
+                    <input className="pm-input" style={{ marginBottom: 0 }} value={groupNameDraft} maxLength={40}
+                      onChange={(e) => setGroupNameDraft(e.target.value)} autoFocus />
+                    <button className="notif-panel-gear-btn" onClick={saveGroupName} aria-label="Save name"><CheckIcon size={15} /></button>
+                    <button className="notif-panel-gear-btn" onClick={() => setEditingGroupName(false)} aria-label="Cancel"><XIcon size={15} /></button>
+                  </div>
+                ) : (
+                  <div className="group-info-edit-row">
+                    <div className="group-info-name">{groupInfoDetail.name}</div>
+                    {['owner', 'admin'].includes(myRoleInGroup(groupInfoDetail)) && (
+                      <button className="notif-panel-gear-btn" onClick={startEditGroupName} aria-label="Edit group name"><PencilIcon size={13} /></button>
+                    )}
+                  </div>
+                )}
+
+                {editingGroupDesc ? (
+                  <div className="group-info-edit-row">
+                    <input className="pm-input" style={{ marginBottom: 0 }} value={groupDescDraft} maxLength={140}
+                      onChange={(e) => setGroupDescDraft(e.target.value)} autoFocus />
+                    <button className="notif-panel-gear-btn" onClick={saveGroupDescription} aria-label="Save description"><CheckIcon size={15} /></button>
+                    <button className="notif-panel-gear-btn" onClick={() => setEditingGroupDesc(false)} aria-label="Cancel"><XIcon size={15} /></button>
+                  </div>
+                ) : (
+                  <div className="group-info-edit-row">
+                    <div className="group-info-desc">{groupInfoDetail.description || 'No description'}</div>
+                    {['owner', 'admin'].includes(myRoleInGroup(groupInfoDetail)) && (
+                      <button className="notif-panel-gear-btn" onClick={startEditGroupDesc} aria-label="Edit description"><PencilIcon size={13} /></button>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <div className="settings-row">
+                <div className="settings-row-label">
+                  {mutedRooms[groupRoomId(groupInfoDetail._id)] ? <VolumeXIcon size={16} /> : <Volume2Icon size={16} />} Mute this group
+                </div>
+                <button className={`toggle-switch ${mutedRooms[groupRoomId(groupInfoDetail._id)] ? 'on' : ''}`} role="switch"
+                  aria-checked={!!mutedRooms[groupRoomId(groupInfoDetail._id)]}
+                  onClick={() => toggleGroupMute(groupInfoDetail._id)}><span className="toggle-switch-thumb" /></button>
+              </div>
+
+              <div className="group-info-members-header">
+                <span>{groupInfoDetail.members.length} Members</span>
+                {['owner', 'admin'].includes(myRoleInGroup(groupInfoDetail)) && (
+                  <button className="notif-panel-markread-btn" onClick={openAddPeopleModal}>+ Add people</button>
+                )}
+              </div>
+
+              <div className="member-list" role="list" aria-label="Group members">
+                {groupInfoDetail.members.slice(0, visibleMemberCount).map(m => {
+                  const u = allUsers.find(x => x.username === m.username);
+                  const canManage = ['owner', 'admin'].includes(myRoleInGroup(groupInfoDetail)) && m.username !== groupInfoDetail.created_by && m.username !== username;
+                  return (
+                    <div className="member-row" role="listitem" key={m.username} tabIndex={0}>
+                      <span className="dm-avatar member-picker-avatar" style={{ background: u?.avatar_color || '#667eea' }}>
+                        {u?.avatar_url ? <img src={u.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} /> : getInitial(m.username)}
+                      </span>
+                      <span className="member-row-name">{m.username}{m.username === username ? ' (you)' : ''}</span>
+                      <span className={`member-role-badge role-${m.role}`}>{m.role}</span>
+                      {canManage && (
+                        <div style={{ position: 'relative' }}>
+                          <button className="notif-panel-gear-btn" aria-label={`Options for ${m.username}`}
+                            onClick={() => setMemberMenuOpenFor(memberMenuOpenFor === m.username ? null : m.username)}>
+                            <MoreVerticalIcon size={15} />
+                          </button>
+                          {memberMenuOpenFor === m.username && (
+                            <div className="convo-menu-dropdown" style={{ right: 0 }}>
+                              {m.role === 'member'
+                                ? <button className="convo-menu-item" onClick={() => promoteMember(m.username, 'admin')}>Make admin</button>
+                                : <button className="convo-menu-item" onClick={() => promoteMember(m.username, 'member')}>Remove admin</button>}
+                              <button className="convo-menu-item" onClick={() => removeMember(m.username)} style={{ color: '#ef4444' }}>Remove from group</button>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+                {groupInfoDetail.members.length > visibleMemberCount && (
+                  <button className="notif-panel-markread-btn" style={{ padding: '10px 16px' }}
+                    onClick={() => setVisibleMemberCount(c => c + 20)}>
+                    +{groupInfoDetail.members.length - visibleMemberCount} more
+                  </button>
+                )}
+              </div>
+
+              <div className="group-info-danger-zone">
+                <button className="crop-cancel-btn" onClick={leaveGroup}><LogOutIcon size={14} /> Leave group</button>
+                {groupInfoDetail.created_by === username && (
+                  <button className="group-delete-btn" onClick={deleteGroupPermanently}><TrashIcon size={14} /> Delete group</button>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {confirmAction && (
+        <div className="settings-overlay" style={{ zIndex: 10001 }} onClick={(e) => e.target === e.currentTarget && setConfirmAction(null)}>
+          <div className="settings-dialog confirm-dialog" role="alertdialog" aria-label={confirmAction.title}>
+            <div className="settings-dialog-title" style={{ marginBottom: '10px' }}>{confirmAction.title}</div>
+            <div className="pm-footer-note" style={{ marginBottom: '18px', fontSize: '13px' }}>{confirmAction.message}</div>
+            <div className="settings-dialog-footer">
+              <button className="crop-cancel-btn" style={{ flex: 'none', padding: '9px 18px' }} onClick={() => setConfirmAction(null)}>Cancel</button>
+              <button className={confirmAction.destructive ? 'group-delete-btn' : 'settings-done-btn'} onClick={confirmAction.onConfirm}>{confirmAction.confirmLabel}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="chat-layout">
         {isMobile && sidebarOpen && (
           <div className="mobile-drawer-overlay" onClick={() => setSidebarOpen(false)}></div>
@@ -3172,6 +3534,62 @@ function Chat({ username, onLogout }) {
               )
               : (!isTablet && <div className="online-dot"></div>)}
           </div>
+
+          <div className="sidebar-section-title">
+            <span>
+              Groups
+              {(() => {
+                const totalUnreadGroups = Object.values(unreadGroups).reduce((a, b) => a + b, 0);
+                return totalUnreadGroups > 0 && (
+                  <span className="unread-pill" style={{ marginLeft: '6px' }} aria-label={`${totalUnreadGroups} unread messages`}>{formatUnreadBadge(totalUnreadGroups)}</span>
+                );
+              })()}
+            </span>
+            <button type="button" className="sidebar-section-add-btn" title="Create group" aria-label="Create group" onClick={openCreateGroupModal}>
+              <PlusIcon size={13} />
+            </button>
+          </div>
+
+          {sortedGroups.map(group => {
+            const groupId = group._id;
+            const unread = unreadGroups[groupId] || 0;
+            const roomKey = groupRoomId(groupId);
+            const isMuted = !!mutedRooms[roomKey];
+            const lastTs = groupLastMessage[groupId] || 0;
+            const lastMsgs = groupMessages[groupId];
+            const lastPreview = lastMsgs && lastMsgs.length > 0
+              ? (lastMsgs[lastMsgs.length - 1].text?.startsWith('__IMAGE__') ? '🖼️ Image'
+                : lastMsgs[lastMsgs.length - 1].text?.startsWith('__FILE__') ? '📎 File'
+                : lastMsgs[lastMsgs.length - 1].text)
+              : '';
+            return (
+              <div key={groupId}
+                className={`dm-item ${activeRoom === 'group' && activeGroupId === groupId ? 'active' : ''} ${unread > 0 ? 'has-unread' : ''}`}
+                title={group.name}
+                onClick={() => openGroup(groupId)}>
+                <div className="dm-avatar" style={{ background: group.avatar_color || '#667eea', borderRadius: '10px' }}>
+                  {getInitial(group.name)}
+                  {isTablet && unread > 0 && (
+                    <span className="rail-badge" aria-label={`${unread} unread messages`}>{formatUnreadBadge(unread)}</span>
+                  )}
+                </div>
+                <div className="dm-info">
+                  <div className="dm-name-row">
+                    <div className="dm-name">{group.name}</div>
+                    {lastTs > 0 && <div className={`dm-time ${unread > 0 ? 'unread' : ''}`}>{formatLastMsgTime(lastTs)}</div>}
+                  </div>
+                  <div className="dm-preview-row">
+                    <div className="dm-preview">{lastPreview || `${group.member_count || 1} members`}</div>
+                    {!isTablet && unread > 0 && (
+                      isMuted
+                        ? <span className="unread-dot-muted" aria-label={`${unread} unread messages`}></span>
+                        : <span className="unread-pill" aria-label={`${unread} unread messages`}>{formatUnreadBadge(unread)}</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
 
           <div className="sidebar-section-title">
             <span>
@@ -3283,21 +3701,27 @@ function Chat({ username, onLogout }) {
                     <span className="mobile-menu-bars"><span></span><span></span><span></span></span>
                   </button>
                 )}
-                <div className="chat-header-avatar">
-                  {activeRoom === 'general' ? <HashIcon size={18} /> : (() => {
-                    const dmUser = allUsers.find(u => u.username === activeDMUser);
-                    return dmUser?.avatar_url
-                      ? <img src={dmUser.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '9px' }} />
-                      : getInitial(activeDMUser || '');
-                  })()}
+                <div className="chat-header-avatar"
+                  style={activeRoom === 'group' ? { cursor: 'pointer', borderRadius: '10px', background: (groups.find(g => g._id === activeGroupId)?.avatar_color) || '#667eea' } : undefined}
+                  onClick={activeRoom === 'group' ? openGroupInfoPanel : undefined}>
+                  {activeRoom === 'general' ? <HashIcon size={18} /> : activeRoom === 'group'
+                    ? getInitial(groups.find(g => g._id === activeGroupId)?.name || '')
+                    : (() => {
+                      const dmUser = allUsers.find(u => u.username === activeDMUser);
+                      return dmUser?.avatar_url
+                        ? <img src={dmUser.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '9px' }} />
+                        : getInitial(activeDMUser || '');
+                    })()}
                 </div>
-                <div className="chat-header-info">
+                <div className="chat-header-info" style={activeRoom === 'group' ? { cursor: 'pointer' } : undefined} onClick={activeRoom === 'group' ? openGroupInfoPanel : undefined}>
                   <div className="chat-header-name">
-                    {activeRoom === 'general' ? 'general' : activeDMUser}
+                    {activeRoom === 'general' ? 'general' : activeRoom === 'group' ? (groups.find(g => g._id === activeGroupId)?.name || '') : activeDMUser}
                   </div>
                   <div className="chat-header-status">
-                    <span className="status-dot" style={{ background: isConnected ? '#10b981' : '#ef4444' }}></span>
-                    {isConnected ? (activeRoom === 'general' ? <><GlobeIcon size={12} /> Group Chat — Everyone online</> : `Private chat`) : 'Connecting...'}
+                    {activeRoom === 'group'
+                      ? <><UsersIcon size={12} /> {groups.find(g => g._id === activeGroupId)?.member_count || 1} members</>
+                      : (<><span className="status-dot" style={{ background: isConnected ? '#10b981' : '#ef4444' }}></span>
+                        {isConnected ? (activeRoom === 'general' ? <><GlobeIcon size={12} /> Group Chat — Everyone online</> : `Private chat`) : 'Connecting...'}</>)}
                   </div>
                 </div>
                 <div className="msg-count">{currentMessages.filter(m => m.type !== 'system').length} msgs</div>
