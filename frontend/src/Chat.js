@@ -79,7 +79,6 @@ const CheckIcon = (p) => <Icon {...p}><path d="M20 6 9 17l-5-5" /></Icon>;
 const UsersIcon = (p) => <Icon {...p}><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></Icon>;
 const PencilIcon = (p) => <Icon {...p}><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" /></Icon>;
 const ImagePlusIcon = (p) => <Icon {...p}><rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="9" cy="9" r="2" /><path d="m21 15-5-5L5 21" /><line x1="16" y1="5" x2="22" y2="5" /><line x1="19" y1="2" x2="19" y2="8" /></Icon>;
-const CameraSmallIcon = (p) => <Icon {...p}><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3Z" /><circle cx="12" cy="13" r="3" /></Icon>;
 
 // ===== SHARED GROUP AVATAR — the single rendering rule used everywhere a group
 // avatar appears (sidebar, header, info panel, modals): image when avatarUrl is
@@ -3527,9 +3526,53 @@ function Chat({ username, onLogout }) {
 
             <div className="group-info-body">
               <div className="group-info-hero">
-                <div className="pm-avatar-wrap" style={{ background: groupInfoDetail.avatar_color, borderRadius: '16px' }}>
-                  {getInitial(groupInfoDetail.name)}
-                </div>
+                <div style={{ position: 'relative' }}>
+                  <div
+                    className="pm-avatar-wrap"
+                    style={{ borderRadius: '16px', background: 'transparent', cursor: ['owner', 'admin'].includes(myRoleInGroup(groupInfoDetail)) ? 'pointer' : 'default' }}
+                    onClick={() => ['owner', 'admin'].includes(myRoleInGroup(groupInfoDetail)) && setGroupAvatarMenuOpen(!groupAvatarMenuOpen)}
+                  >
+                    <GroupAvatar group={groupInfoDetail} size={88} radius={16} />
+                    {groupAvatarUploading && (
+                      <div className="avatar-block-spinner" style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.4)', borderRadius: '16px' }}>
+                        <Loader2Icon size={22} className="spin-icon" style={{ color: 'white' }} />
+                      </div>
+                    )}
+                  </div>
+
+                  {groupAvatarMenuOpen && (
+                    <div className="convo-menu-dropdown" style={{ top: 'calc(100% + 8px)', left: '50%', transform: 'translateX(-50%)', width: '190px' }}>
+                      <label className="convo-menu-item" style={{ cursor: 'pointer' }}>
+                        <ImagePlusIcon size={15} /> Upload photo
+                        <input type="file" accept="image/png,image/jpeg,image/webp" style={{ display: 'none' }}
+                          onChange={(e) => { const f = e.target.files[0]; if (f) uploadGroupPhoto(f); e.target.value = ''; }} />
+                      </label>
+                      <button className="convo-menu-item" onClick={startChangeGroupColor}><PaletteIcon size={15} /> Change color</button>
+                      {groupInfoDetail.avatar_url && (
+                        <button className="convo-menu-item" onClick={removeGroupPhoto} style={{ color: '#ef4444' }}><TrashIcon size={15} /> Remove photo</button>
+                      )}
+                    </div>
+                  )}
+
+                  {groupAvatarChangingColor && (
+                    <div className="convo-menu-dropdown" style={{ top: 'calc(100% + 8px)', left: '50%', transform: 'translateX(-50%)', width: '220px', padding: '12px' }}>
+                      <div className="swatch-row" role="radiogroup" aria-label="Group colour">
+                        {GROUP_AVATAR_COLORS.map(color => (
+                          <button key={color} type="button" role="radio" aria-checked={groupAvatarColorDraft === color}
+                            className={`swatch-btn ${groupAvatarColorDraft === color ? 'selected' : ''}`}
+                            style={{ background: color }} onClick={() => setGroupAvatarColorDraft(color)}>
+                            {groupAvatarColorDraft === color && <CheckIcon size={14} />}
+                          </button>
+                        ))}
+                      </div>
+                      <div style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
+                        <button className="crop-cancel-btn" style={{ padding: '7px' }} onClick={() => setGroupAvatarChangingColor(false)}>Cancel</button>
+                        <button className="settings-done-btn" style={{ padding: '7px 14px' }} onClick={saveGroupColorChange}>Save</button>
+                      </div>
+                    </div>
+                  )}
+                  {groupAvatarError && <div className="field-error-text" style={{ justifyContent: 'center' }}>{groupAvatarError}</div>}
+                </div> 
                 {editingGroupName ? (
                   <div className="group-info-edit-row">
                     <input className="pm-input" style={{ marginBottom: 0 }} value={groupNameDraft} maxLength={40}
