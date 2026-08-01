@@ -226,6 +226,7 @@ def _serialize_group(g, member_count_only=False):
     g['_id'] = str(g['_id'])
     if member_count_only:
         g['member_count'] = len(g.get('members', []))
+        g['member_usernames'] = [m['username'] for m in g.get('members', [])]
         g.pop('members', None)
     return g
 

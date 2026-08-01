@@ -2712,6 +2712,30 @@ function Chat({ username, onLogout }) {
           box-shadow: 0 0 0 2px #0d0d1a;
         }
         .header-btn { position: relative; }
+        /* ===== GROUP HEADER MEMBER STACK (overlapping avatars, top-right of group chat header) ===== */
+        .header-member-stack {
+          display: flex; align-items: center;
+          background: none; border: none; cursor: pointer;
+          padding: 0 6px 0 0;
+          flex-shrink: 0;
+        }
+        .header-member-stack-avatar {
+          width: 26px; height: 26px; border-radius: 50%;
+          display: flex; align-items: center; justify-content: center;
+          font-size: 10px; font-weight: 700; color: white;
+          border: 2px solid #0d0d1a;
+          overflow: hidden;
+          margin-left: -8px;
+        }
+        .header-member-stack-avatar:first-child { margin-left: 0; }
+        .header-member-stack-more {
+          width: 26px; height: 26px; border-radius: 50%;
+          display: flex; align-items: center; justify-content: center;
+          font-size: 10px; font-weight: 700; color: #94a3b8;
+          background: rgba(255,255,255,0.1);
+          border: 2px solid #0d0d1a;
+          margin-left: -8px;
+        }
 
         /* ===== CONVERSATION OVERFLOW MENU (mute toggle) ===== */
         .convo-menu-dropdown {
@@ -2933,10 +2957,7 @@ function Chat({ username, onLogout }) {
         .member-picker-row:hover { background: var(--surface-3); }
         .member-picker-row input { accent-color: var(--accent); width: 15px; height: 15px; cursor: pointer; }
         .member-picker-avatar { width: 30px; height: 30px; font-size: 12px; }
-        .member-picker-row:hover { background: var(--surface-3); }
-        .member-picker-row input { accent-color: var(--accent); width: 15px; height: 15px; cursor: pointer; }
-        .member-picker-avatar { width: 30px; height: 30px; font-size: 12px; }
-
+        
         /* ===== AVATAR BLOCK (create-group modal + reused for color swatches) ===== */
         .avatar-block {
           display: flex; align-items: flex-start; gap: 16px;
