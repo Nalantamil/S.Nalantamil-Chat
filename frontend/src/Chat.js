@@ -3707,7 +3707,7 @@ function Chat({ username, onLogout }) {
 
               <div className="member-list" role="list" aria-label="Group members">
                 {groupInfoDetail.members.slice(0, visibleMemberCount).map(m => {
-                  const u = allUsers.find(x => x.username === m.username);
+                  const u = m.username === username ? profile : allUsers.find(x => x.username === m.username);
                   const canManage = ['owner', 'admin'].includes(myRoleInGroup(groupInfoDetail)) && m.username !== groupInfoDetail.created_by && m.username !== username;
                   return (
                     <div className="member-row" role="listitem" key={m.username} tabIndex={0}>
@@ -4027,7 +4027,7 @@ function Chat({ username, onLogout }) {
                 {activeRoom === 'group' && (
                   <button className="header-member-stack" title="Group members" aria-label="View group members" onClick={openGroupInfoPanel}>
                     {(groups.find(g => g._id === activeGroupId)?.member_usernames || []).slice(0, 3).map((mu, i) => {
-                      const u = allUsers.find(x => x.username === mu);
+                      const u = mu === username ? profile : allUsers.find(x => x.username === mu);
                       return (
                         <span key={mu + i} className="header-member-stack-avatar" style={{ zIndex: 3 - i, background: u?.avatar_color || '#667eea' }}>
                           {u?.avatar_url ? <img src={u.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} /> : getInitial(mu)}
