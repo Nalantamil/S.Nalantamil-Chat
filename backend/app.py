@@ -331,6 +331,10 @@ def update_group(group_id):
         update_data['name'] = name
     if 'description' in data:
         update_data['description'] = (data['description'] or '')[:140]
+    if 'avatar_color' in data:
+        update_data['avatar_color'] = data['avatar_color']
+    if 'avatar_url' in data:
+        update_data['avatar_url'] = data['avatar_url']
     if update_data:
         groups_collection.update_one({'_id': ObjectId(group_id)}, {'$set': update_data})
 
