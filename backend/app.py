@@ -15,7 +15,7 @@ app.config['SECRET_KEY'] = 'your-secret-key-change-later'
 CORS(app,
      resources={r"/*": {"origins": "*"}},
      allow_headers=["Content-Type", "Authorization"],
-     methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+     methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
 )
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading', ping_timeout=60, ping_interval=25)
 
