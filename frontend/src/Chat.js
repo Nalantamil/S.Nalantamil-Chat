@@ -2933,6 +2933,68 @@ function Chat({ username, onLogout }) {
         .member-picker-row:hover { background: var(--surface-3); }
         .member-picker-row input { accent-color: var(--accent); width: 15px; height: 15px; cursor: pointer; }
         .member-picker-avatar { width: 30px; height: 30px; font-size: 12px; }
+        .member-picker-row:hover { background: var(--surface-3); }
+        .member-picker-row input { accent-color: var(--accent); width: 15px; height: 15px; cursor: pointer; }
+        .member-picker-avatar { width: 30px; height: 30px; font-size: 12px; }
+
+        /* ===== AVATAR BLOCK (create-group modal + reused for color swatches) ===== */
+        .avatar-block {
+          display: flex; align-items: flex-start; gap: 16px;
+          margin: 16px 0 4px;
+        }
+        .avatar-block-preview {
+          position: relative; flex-shrink: 0;
+          border-radius: 36px;
+          transition: box-shadow 150ms ease;
+        }
+        .avatar-block-preview.drag-over {
+          box-shadow: 0 0 0 3px rgba(99,102,241,0.5);
+        }
+        .avatar-block-spinner {
+          position: absolute; inset: 0;
+          display: flex; align-items: center; justify-content: center;
+          background: rgba(0,0,0,0.45);
+          border-radius: 36px;
+          color: white;
+        }
+        .avatar-block-remove {
+          position: absolute; top: -4px; right: -4px;
+          width: 20px; height: 20px; border-radius: 50%;
+          background: #ef4444; border: 2px solid #111120;
+          color: white; display: flex; align-items: center; justify-content: center;
+          cursor: pointer; padding: 0;
+        }
+        .avatar-block-remove:hover { background: #dc2626; }
+        .avatar-block-side { flex: 1; min-width: 0; }
+        .avatar-upload-btn {
+          display: inline-flex; align-items: center; gap: 6px;
+          background: rgba(99,102,241,0.12); border: 1px solid rgba(99,102,241,0.3);
+          color: #818cf8; font-size: 12px; font-weight: 600;
+          padding: 7px 12px; border-radius: 8px; cursor: pointer;
+          transition: all 150ms;
+        }
+        .avatar-upload-btn:hover { background: rgba(99,102,241,0.2); }
+        .pm-color-label {
+          font-size: 10px; color: #475569; text-transform: uppercase; letter-spacing: 0.08em;
+        }
+
+        /* ===== COLOR SWATCH ROW (create-group modal + group info color picker) ===== */
+        .swatch-row {
+          display: flex; flex-wrap: wrap; gap: 8px;
+          transition: opacity 150ms ease;
+        }
+        .swatch-row.de-emphasized { opacity: 0.4; }
+        .swatch-btn {
+          width: 28px; height: 28px; border-radius: 50%;
+          border: 2px solid transparent;
+          cursor: pointer; padding: 0;
+          display: flex; align-items: center; justify-content: center;
+          color: white;
+          transition: transform 150ms ease, border-color 150ms ease;
+        }
+        .swatch-btn:hover { transform: scale(1.1); }
+        .swatch-btn.selected { border-color: white; box-shadow: 0 0 0 2px rgba(99,102,241,0.6); }
+        .swatch-btn:focus-visible { outline: 2px solid #6366f1; outline-offset: 2px; }
 
         /* ===== CREATE GROUP MODAL — two-step slide ===== */
         .create-group-dialog { overflow: hidden; padding-bottom: 0; }
