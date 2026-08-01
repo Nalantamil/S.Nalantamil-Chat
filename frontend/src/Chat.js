@@ -3359,13 +3359,45 @@ function Chat({ username, onLogout }) {
                     maxLength={140} onChange={(e) => setCreateGroupDescription(e.target.value)} />
                   {createGroupErrors.description && <div className="field-error-text">{createGroupErrors.description}</div>}
 
-                  <div className="pm-color-label" style={{ marginTop: '8px', marginBottom: '8px' }}>AVATAR COLOR</div>
-                  <div className="pm-color-grid">
-                    {GROUP_AVATAR_COLORS.map(color => (
-                      <button key={color} type="button" className={`pm-color-btn ${createGroupColor === color ? 'selected' : ''}`}
-                        style={{ background: color }} onClick={() => setCreateGroupColor(color)} />
-                    ))}
+                  <div className="avatar-block">
+                    <div
+                      className={`avatar-block-preview ${createGroupAvatarDragOver ? 'drag-over' : ''}`}
+                      onDragOver={(e) => { e.preventDefault(); setCreateGroupAvatarDragOver(true); }}
+                      onDragLeave={() => setCreateGroupAvatarDragOver(false)}
+                      onDrop={(e) => { e.preventDefault(); setCreateGroupAvatarDragOver(false); const f = e.dataTransfer.files[0]; if (f) handleCreateGroupAvatarFile(f); }}
+                    >
+                      <GroupAvatar group={{ name: createGroupName || 'Group', avatar_color: createGroupColor, avatar_url: createGroupAvatarUrl }} size={72} radius={36} />
+                      {createGroupAvatarUploading && <div className="avatar-block-spinner"><Loader2Icon size={20} className="spin-icon" /></div>}
+                      {createGroupAvatarUrl && !createGroupAvatarUploading && (
+                        <button type="button" className="avatar-block-remove" aria-label="Remove photo"
+                          onClick={() => setCreateGroupAvatarUrl('')}><XIcon size={11} /></button>
+                      )}
+                    </div>
+                    <div className="avatar-block-side">
+                      <label className="avatar-upload-btn">
+                        <ImagePlusIcon size={14} /> Upload photo
+                        <input type="file" accept="image/png,image/jpeg,image/webp" style={{ display: 'none' }}
+                          onChange={(e) => { const f = e.target.files[0]; if (f) handleCreateGroupAvatarFile(f); e.target.value = ''; }} />
+                      </label>
+                      <div className="pm-color-label" style={{ margin: '10px 0 6px' }}>or pick a colour</div>
+                      <div className={`swatch-row ${createGroupAvatarUrl ? 'de-emphasized' : ''}`} role="radiogroup" aria-label="Avatar colour"
+                        onKeyDown={(e) => {
+                          const idx = GROUP_AVATAR_COLORS.indexOf(createGroupColor);
+                          if (e.key === 'ArrowRight') { e.preventDefault(); setCreateGroupColor(GROUP_AVATAR_COLORS[(idx + 1) % GROUP_AVATAR_COLORS.length]); }
+                          if (e.key === 'ArrowLeft') { e.preventDefault(); setCreateGroupColor(GROUP_AVATAR_COLORS[(idx - 1 + GROUP_AVATAR_COLORS.length) % GROUP_AVATAR_COLORS.length]); }
+                        }}>
+                        {GROUP_AVATAR_COLORS.map(color => (
+                          <button key={color} type="button" role="radio" aria-checked={createGroupColor === color} aria-label={`Colour ${color}`}
+                            className={`swatch-btn ${createGroupColor === color ? 'selected' : ''}`}
+                            style={{ background: color }} tabIndex={createGroupColor === color ? 0 : -1}
+                            onClick={() => setCreateGroupColor(color)}>
+                            {createGroupColor === color && <CheckIcon size={14} />}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
                   </div>
+                  {createGroupAvatarError && <div className="field-error-text">{createGroupAvatarError}</div>}
                   {createGroupErrors.submit && <div className="field-error-text">{createGroupErrors.submit}</div>}
                 </div>
               </div>
@@ -3707,8 +3739,8 @@ function Chat({ username, onLogout }) {
                 className={`dm-item ${activeRoom === 'group' && activeGroupId === groupId ? 'active' : ''} ${unread > 0 ? 'has-unread' : ''}`}
                 title={group.name}
                 onClick={() => openGroup(groupId)}>
-                <div className="dm-avatar" style={{ background: group.avatar_color || '#667eea', borderRadius: '10px' }}>
-                  {getInitial(group.name)}
+                <div className="dm-avatar" style={{ position: 'relative', background: 'transparent', padding: 0 }}>
+                  <GroupAvatar group={group} size={38} radius={10} />
                   {isTablet && unread > 0 && (
                     <span className="rail-badge" aria-label={`${unread} unread messages`}>{formatUnreadBadge(unread)}</span>
                   )}
@@ -3829,9 +3861,11 @@ function Chat({ username, onLogout }) {
           ) : (
             <>
               <div className="chat-header">
-                <button className="mobile-back-btn ripple-btn" onClick={backToList} aria-label="Back to chat list">
-                  <ChevronLeftIcon size={18} />
-                </button>
+                {isMobile && (
+                  <button className="mobile-back-btn ripple-btn" onClick={backToList} aria-label="Back to chat list">
+                    <ChevronLeftIcon size={18} />
+                  </button>
+                )}
                 {isMobile && (
                   <button
                     className={`mobile-menu-btn ripple-btn ${sidebarOpen ? 'open' : ''}`}
@@ -3842,10 +3876,10 @@ function Chat({ username, onLogout }) {
                   </button>
                 )}
                 <div className="chat-header-avatar"
-                  style={activeRoom === 'group' ? { cursor: 'pointer', borderRadius: '10px', background: (groups.find(g => g._id === activeGroupId)?.avatar_color) || '#667eea' } : undefined}
+                  style={activeRoom === 'group' ? { cursor: 'pointer', borderRadius: '10px', background: 'transparent', border: 'none', padding: 0 } : undefined}
                   onClick={activeRoom === 'group' ? openGroupInfoPanel : undefined}>
                   {activeRoom === 'general' ? <HashIcon size={18} /> : activeRoom === 'group'
-                    ? getInitial(groups.find(g => g._id === activeGroupId)?.name || '')
+                    ? <GroupAvatar group={groups.find(g => g._id === activeGroupId)} size={40} radius={10} />
                     : (() => {
                       const dmUser = allUsers.find(u => u.username === activeDMUser);
                       return dmUser?.avatar_url
@@ -3864,7 +3898,21 @@ function Chat({ username, onLogout }) {
                         {isConnected ? (activeRoom === 'general' ? <><GlobeIcon size={12} /> Group Chat — Everyone online</> : `Private chat`) : 'Connecting...'}</>)}
                   </div>
                 </div>
-                <div className="msg-count">{currentMessages.filter(m => m.type !== 'system').length} msgs</div>
+                {activeRoom === 'group' && (
+                  <button className="header-member-stack" title="Group members" aria-label="View group members" onClick={openGroupInfoPanel}>
+                    {(groups.find(g => g._id === activeGroupId)?.member_usernames || []).slice(0, 3).map((mu, i) => {
+                      const u = allUsers.find(x => x.username === mu);
+                      return (
+                        <span key={mu + i} className="header-member-stack-avatar" style={{ zIndex: 3 - i, background: u?.avatar_color || '#667eea' }}>
+                          {u?.avatar_url ? <img src={u.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} /> : getInitial(mu)}
+                        </span>
+                      );
+                    })}
+                    {(groups.find(g => g._id === activeGroupId)?.member_count || 0) > 3 && (
+                      <span className="header-member-stack-more">+{(groups.find(g => g._id === activeGroupId)?.member_count || 0) - 3}</span>
+                    )}
+                  </button>
+                )}
 
                 {activeRoom === 'dm' && (
                   <button className="header-btn ripple-btn"
