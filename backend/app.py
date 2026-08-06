@@ -15,7 +15,7 @@ app.config['SECRET_KEY'] = 'your-secret-key-change-later'
 CORS(app,
      resources={r"/*": {"origins": "*"}},
      allow_headers=["Content-Type", "Authorization"],
-     methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
+     methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"]
 )
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading', ping_timeout=60, ping_interval=25)
 
@@ -163,7 +163,9 @@ def get_profile(username):
         return jsonify({"error": "User not found"}), 404
     return jsonify({
         "username": user['username'],
+        "display_name": user.get('display_name', ''),
         "bio": user.get('bio', ''),
+        "status": user.get('status', ''),
         "avatar_color": user.get('avatar_color', '#667eea'),
         "avatar_url": user.get('avatar_url', '')
     }), 200
@@ -174,8 +176,12 @@ def update_profile(username):
         return '', 200
     data = request.json
     update_data = {}
+    if 'display_name' in data:
+        update_data['display_name'] = (data['display_name'] or '')[:40]
     if 'bio' in data:
         update_data['bio'] = data['bio']
+    if 'status' in data:
+        update_data['status'] = (data['status'] or '')[:60]
     if 'avatar_color' in data:
         update_data['avatar_color'] = data['avatar_color']
     if 'avatar_url' in data:
@@ -252,6 +258,7 @@ def create_group():
 
     description = (data.get('description') or '')[:140]
     avatar_color = data.get('avatar_color', '#667eea')
+    avatar_url = data.get('avatar_url', '')
     member_usernames = list(dict.fromkeys(data.get('member_usernames', [])))  # dedupe, preserve order
     member_usernames = [u for u in member_usernames if u != created_by]
 
@@ -264,6 +271,7 @@ def create_group():
         "name": name,
         "description": description,
         "avatar_color": avatar_color,
+        "avatar_url": avatar_url,
         "created_by": created_by,
         "created_at": now,
         "members": members,
@@ -332,12 +340,25 @@ def update_group(group_id):
         update_data['name'] = name
     if 'description' in data:
         update_data['description'] = (data['description'] or '')[:140]
-    if 'avatar_color' in data:
-        update_data['avatar_color'] = data['avatar_color']
+
+    photo_system_text = None
     if 'avatar_url' in data:
-        update_data['avatar_url'] = data['avatar_url']
+        new_avatar_url = data['avatar_url'] or ''
+        update_data['avatar_url'] = new_avatar_url
+        if new_avatar_url:
+            photo_system_text = f"{changed_by} changed the group photo"
+        else:
+            photo_system_text = f"{changed_by} removed the group photo"
+
     if update_data:
         groups_collection.update_one({'_id': ObjectId(group_id)}, {'$set': update_data})
+
+    if photo_system_text:
+        now = str(datetime.datetime.utcnow())
+        sys_msg = {'username': changed_by, 'text': photo_system_text, 'type': 'system',
+                   'timestamp': now, 'room_id': _group_room_id(group_id)}
+        messages_collection.insert_one(sys_msg)
+        socketio.emit('message', sys_msg, room=_group_room_id(group_id))
 
     updated = groups_collection.find_one({'_id': ObjectId(group_id)})
     serialized = _serialize_group(updated, member_count_only=True)

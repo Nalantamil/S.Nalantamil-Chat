@@ -1,10 +1,12 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { z } from 'zod';
 import {
   User, Lock, Eye, EyeOff, ArrowRight, Check, Circle, AlertCircle, Loader2, MessageCircle,
 } from 'lucide-react';
 import Chat from './Chat';
+import Settings from './Settings';
 
 // ===== VALIDATION SCHEMAS =====
 const loginSchema = z.object({
@@ -40,37 +42,26 @@ function getPasswordStrength(pwd) {
   return { label: 'Strong', level: 4 };
 }
 
-function App() {
+function AuthScreen({ onLoggedIn }) {
   const [isLogin, setIsLogin] = useState(true);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
-  const [loggedInUser, setLoggedInUser] = useState(null);
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
   const [fieldErrors, setFieldErrors] = useState({ username: '', password: '' });
   const [touched, setTouched] = useState({ username: false, password: false });
   const [forgotMsg, setForgotMsg] = useState('');
   const [loginSuccess, setLoginSuccess] = useState(false);
-  const [errorAction, setErrorAction] = useState(null); // { label, onClick }
-  const [toast, setToast] = useState(null); // { message }
-  const toastTimeoutRef = useRef(null);
+  const [errorAction, setErrorAction] = useState(null);
+  const [toast, setToast] = useState(null);
+  const toastTimeoutRef = React.useRef(null);
 
-  // Load remembered username on mount
   useEffect(() => {
     const remembered = localStorage.getItem('rememberedUsername');
     if (remembered) {
       setUsername(remembered);
       setRememberMe(true);
-    }
-  }, []);
-
-  // Restore session on page load/refresh if a valid token + username exist
-  useEffect(() => {
-    const token = localStorage.getItem('token');
-    const savedUser = localStorage.getItem('authUsername');
-    if (token && savedUser) {
-      setLoggedInUser(savedUser);
     }
   }, []);
 
@@ -146,7 +137,7 @@ function App() {
         }
         setLoading(false);
         setLoginSuccess(true);
-        setTimeout(() => setLoggedInUser(username.trim()), 900);
+        setTimeout(() => onLoggedIn(username.trim()), 900);
         return;
       } else {
         showToast('Account created — please log in.');
@@ -157,7 +148,7 @@ function App() {
       const lower = rawMsg.toLowerCase();
       if (lower.includes('password')) {
         showToast('Incorrect password. Please try again.');
-        setErrorAction({ label: 'Forgot your password?', onClick: handleForgotPassword });
+        setErrorAction({ label: 'Forgot your password?', onClick: () => setForgotMsg('Password reset is coming soon — please contact support for now.') });
       } else if (lower.includes('exist')) {
         showToast('That username is already taken.');
       } else if (lower.includes('not found') || lower.includes('user')) {
@@ -169,23 +160,6 @@ function App() {
     }
     setLoading(false);
   };
-
-  const handleLogout = () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('authUsername');
-    setLoggedInUser(null);
-    setLoginSuccess(false);
-    setUsername('');
-    setPassword('');
-  };
-
-  const handleForgotPassword = () => {
-    setForgotMsg('Password reset is coming soon — please contact support for now.');
-  };
-
-  if (loggedInUser) {
-    return <Chat username={loggedInUser} onLogout={handleLogout} />;
-  }
 
   const usernameHasError = touched.username && fieldErrors.username;
   const passwordHasError = touched.password && fieldErrors.password;
@@ -253,7 +227,6 @@ function App() {
           flex-direction: column;
         }
 
-        /* ===== BRAND PANEL (desktop split) ===== */
         .brand-panel {
           display: none;
         }
@@ -292,12 +265,10 @@ function App() {
         .brand-bullets li { display: flex; align-items: center; gap: 10px; font-size: 14px; color: var(--muted-fg); }
         .brand-bullet-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--primary); flex-shrink: 0; }
 
-        /* ===== MOBILE BRAND (collapsed) ===== */
         .mobile-brand { text-align: center; padding: 32px 20px 8px; }
         .mobile-brand .brand-mark { margin: 0 auto; }
         .mobile-brand .brand-wordmark { font-size: 22px; }
 
-        /* ===== FORM PANEL ===== */
         .form-panel {
           flex: 1;
           display: flex;
@@ -316,7 +287,6 @@ function App() {
           animation: cardIn 300ms ease-out;
         }
 
-        /* ===== SEGMENTED TOGGLE ===== */
         .tabs-pill {
           position: relative;
           display: flex;
@@ -349,7 +319,6 @@ function App() {
         .tab-btn.active { color: var(--primary-fg); }
         .tab-btn:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 
-        /* ===== FIELDS ===== */
         .field-group { margin-bottom: 16px; }
         .field-label {
           display: block; font-size: 12px; font-weight: 600;
@@ -395,7 +364,6 @@ function App() {
         }
         .field-hint { color: var(--faint-fg); font-size: 12px; margin-top: 6px; }
 
-        /* ===== FIXED-HEIGHT CROSS-FADE ZONE (avoids card height jump on tab switch) ===== */
         .extras-zone { position: relative; min-height: 46px; margin-bottom: 4px; }
         .extras-pane {
           position: absolute; inset: 0;
@@ -427,7 +395,6 @@ function App() {
         }
         .check-item { font-size: 12px; display: flex; align-items: center; gap: 6px; color: var(--faint-fg); }
         .check-item.met { color: var(--success); }
-        .check-item .check-icon-pop { animation: checkPop 250ms ease; }
 
         .btn-primary {
           width: 100%; height: 48px;
@@ -461,7 +428,6 @@ function App() {
         .footer-link { color: var(--primary); cursor: pointer; font-weight: 600; background: none; border: none; font-size: 13px; }
         .footer-link:hover { color: var(--primary-2); }
 
-        /* ===== SUCCESS SCREEN ===== */
         .success-screen { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 40px 20px; }
         .success-check {
           width: 64px; height: 64px; border-radius: 50%;
@@ -472,7 +438,6 @@ function App() {
         .success-title { font-size: 18px; font-weight: 700; color: var(--fg); }
         .success-sub { font-size: 13px; color: var(--muted-fg); display: flex; align-items: center; gap: 8px; }
 
-        /* ===== TOAST ===== */
         .toast {
           position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
           z-index: 9999;
@@ -486,7 +451,6 @@ function App() {
         }
         .toast-icon { color: var(--destructive); flex-shrink: 0; }
 
-        /* ===== DESKTOP SPLIT (>=1024px) ===== */
         @media (min-width: 1024px) {
           .auth-shell { flex-direction: row; }
           .brand-panel {
@@ -617,7 +581,7 @@ function App() {
                                 <input type="checkbox" checked={rememberMe} onChange={(e) => setRememberMe(e.target.checked)} />
                                 Remember me
                               </label>
-                              <button type="button" className="forgot-link" onClick={handleForgotPassword}>Forgot password?</button>
+                              <button type="button" className="forgot-link" onClick={() => setForgotMsg('Password reset is coming soon — please contact support for now.')}>Forgot password?</button>
                             </div>
                           </div>
                         ) : (
@@ -679,6 +643,54 @@ function App() {
         </div>
       </div>
     </>
+  );
+}
+
+function ChatRoute({ loggedInUser, onLogout }) {
+  const navigate = useNavigate();
+  if (!loggedInUser) return <Navigate to="/" replace />;
+  return <Chat username={loggedInUser} onLogout={onLogout} onOpenSettings={() => navigate('/settings')} />;
+}
+
+function SettingsRoute({ loggedInUser, onLogout }) {
+  if (!loggedInUser) return <Navigate to="/" replace />;
+  return <Settings username={loggedInUser} onLogout={onLogout} />;
+}
+
+function AppRoutes() {
+  const [loggedInUser, setLoggedInUser] = useState(null);
+
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    const savedUser = localStorage.getItem('authUsername');
+    if (token && savedUser) setLoggedInUser(savedUser);
+  }, []);
+
+  const handleLogout = () => {
+    localStorage.removeItem('token');
+    localStorage.removeItem('authUsername');
+    setLoggedInUser(null);
+  };
+
+  return (
+    <Routes>
+      <Route path="/settings/:section" element={<SettingsRoute loggedInUser={loggedInUser} onLogout={handleLogout} />} />
+      <Route path="/settings" element={<SettingsRoute loggedInUser={loggedInUser} onLogout={handleLogout} />} />
+      <Route path="/" element={
+        loggedInUser
+          ? <ChatRoute loggedInUser={loggedInUser} onLogout={handleLogout} />
+          : <AuthScreen onLoggedIn={setLoggedInUser} />
+      } />
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
+  );
+}
+
+function App() {
+  return (
+    <BrowserRouter>
+      <AppRoutes />
+    </BrowserRouter>
   );
 }
 
