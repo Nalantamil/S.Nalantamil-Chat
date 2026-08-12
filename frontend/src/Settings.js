@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import axios from 'axios';
 import {
@@ -6,6 +6,8 @@ import {
   Camera, Check, Circle, AlertCircle, Loader2, Eye, EyeOff, LogOut, Trash2,
   Download, Volume2, VolumeX, X,
 } from 'lucide-react';
+import { getStoredTheme, changeTheme, initTheme } from './theme';
+import Avatar from './Avatar';
 
 const API = 'https://s-nalantamil-chat.onrender.com';
 const AVATAR_COLORS = ['#667eea', '#e74c3c', '#2ecc71', '#f39c12', '#e91e63', '#00bcd4', '#9c27b0', '#ff5722'];
@@ -27,7 +29,7 @@ const NAV_ITEMS = [
 
 // ===== PREFERENCES — persisted per user, applied live (no Save button). =====
 const DEFAULT_PREFS = {
-  theme: 'dark', accent: 'violet', fontSize: 'default', density: 'comfortable',
+  accent: 'violet', fontSize: 'default', density: 'comfortable',
   sendOnEnter: true, autoScroll: true, defaultView: 'last',
   linkPreviews: true, readReceipts: true, typingIndicator: true, imageAutoDownload: true,
   emojiSkinTone: 'default',
@@ -52,14 +54,18 @@ function usePreferences(username) {
   // toggles, segmented controls, and badges — those pick up the change too.
   // The older hardcoded chat-bubble/sidebar colors in Chat.js are untouched;
   // retokenizing those is a separate, much larger pass.
-  useEffect(() => {
+useEffect(() => {
     const root = document.documentElement;
     const accent = ACCENTS[prefs.accent] || ACCENTS.violet;
     root.style.setProperty('--accent', accent.c1);
     root.style.setProperty('--accent-2', accent.c2);
-    root.setAttribute('data-theme', prefs.theme);
     root.setAttribute('data-font-size', prefs.fontSize);
-  }, [prefs.accent, prefs.theme, prefs.fontSize]);
+  }, [prefs.accent, prefs.fontSize]);
+
+  useEffect(() => {
+    const cleanup = initTheme();
+    return cleanup;
+  }, []);
 
   const updatePref = (key, value) => setPrefs(prev => ({ ...prev, [key]: value }));
   return [prefs, updatePref];
@@ -137,18 +143,14 @@ export default function Settings({ username, onLogout }) {
   const showMobileSectionPage = isMobile && window.location.pathname !== '/settings';
 
   return (
-    <div className="stg-page" data-theme={prefs.theme}>
-      <style>{`
+    <div className="stg-page">
+    <style>{`
         .stg-page {
-          --stg-bg: #07070f; --stg-surface-2: #111120; --stg-surface-3: #1c1c32; --stg-surface-4: #2a2a45;
-          --stg-border: rgba(255,255,255,0.08); --stg-fg: #f1f5f9; --stg-muted: #94a3b8; --stg-faint: #475569;
-          --stg-destructive: #ef4444; --stg-success: #10b981;
-          min-height: 100vh; background: var(--stg-bg); color: var(--stg-fg);
+          min-height: 100vh; background: var(--bg); color: var(--foreground);
           font-family: 'Segoe UI', sans-serif; display: flex;
-        }
-        .stg-page[data-theme="light"] {
-          --stg-bg: #f4f5f8; --stg-surface-2: #ffffff; --stg-surface-3: #eef0f4; --stg-surface-4: #e2e5ec;
-          --stg-border: rgba(0,0,0,0.08); --stg-fg: #111827; --stg-muted: #4b5563; --stg-faint: #9ca3af;
+          --stg-bg: var(--bg); --stg-surface-2: var(--surface-2); --stg-surface-3: var(--surface-3); --stg-surface-4: var(--surface-4);
+          --stg-border: var(--border); --stg-fg: var(--foreground); --stg-muted: var(--muted-foreground); --stg-faint: var(--faint-foreground);
+          --stg-destructive: var(--destructive); --stg-success: var(--success);
         }
         .stg-page[data-font-size="small"] { font-size: 13px; }
         .stg-page[data-font-size="large"] { font-size: 16px; }
@@ -186,28 +188,33 @@ export default function Settings({ username, onLogout }) {
         .stg-row-label { font-size: 14px; font-weight: 500; }
         .stg-row-sub { font-size: 12px; color: var(--stg-muted); margin-top: 2px; }
 
-        .stg-field-label { font-size: 12px; font-weight: 600; color: var(--stg-muted); margin-bottom: 6px; display: block; }
+        .stg-field-label { font-size: 13px; font-weight: 500; color: var(--stg-muted); margin-bottom: 8px; display: block; }
         .stg-input {
-          width: 100%; min-height: 46px; background: var(--stg-surface-3); border: 1px solid var(--stg-border);
+          width: 100%; box-sizing: border-box; height: 48px; min-height: 48px;
+          background: var(--stg-surface-3); border: 1px solid var(--stg-border);
           border-radius: 10px; color: var(--stg-fg); padding: 0 14px; font-size: 14px; outline: none;
           transition: border-color 150ms, box-shadow 150ms; font-family: inherit;
         }
         .stg-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(99,102,241,0.15); }
         .stg-input:disabled { opacity: 0.55; cursor: not-allowed; }
-        .stg-textarea { min-height: 90px; padding: 12px 14px; resize: vertical; }
-        .stg-field-group { margin-bottom: 16px; }
-        .stg-char-count { font-size: 11px; color: var(--stg-faint); text-align: right; margin-top: 4px; }
-        .stg-input-wrap { position: relative; }
+        .stg-textarea { height: auto; min-height: 120px; max-height: 120px; padding: 12px 14px; resize: vertical; line-height: 1.5; }
+        .stg-field-group { margin-bottom: 20px; }
+        .stg-field-group:last-child { margin-bottom: 0; }
+        .stg-char-count { font-size: 11px; color: var(--stg-faint); text-align: right; margin-top: 6px; width: 100%; box-sizing: border-box; }
+        .stg-field-helper { font-size: 12px; color: var(--stg-muted); margin-top: 6px; }
+        .stg-input-wrap { position: relative; width: 100%; box-sizing: border-box; }
+        .stg-input-wrap .stg-input { padding-right: 48px; }
         .stg-input-icon-btn {
-          position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
-          width: 36px; height: 36px; border-radius: 8px; background: none; border: none;
+          position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
+          width: 44px; height: 44px; min-width: 44px; border-radius: 8px; background: none; border: none;
           color: var(--stg-muted); display: flex; align-items: center; justify-content: center; cursor: pointer;
         }
         .stg-input-icon-btn:hover { background: var(--stg-surface-4); }
         .stg-at-prefix {
-          position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: var(--stg-muted); font-size: 14px; pointer-events: none;
+          position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: var(--stg-muted); font-size: 14px; pointer-events: none; z-index: 1;
         }
-        .stg-input-with-prefix { padding-left: 24px; }
+        .stg-input-with-prefix { padding-left: 28px; }
+        select.stg-input { width: 100%; -webkit-appearance: none; appearance: none; }
 
         .stg-avatar-block { display: flex; align-items: flex-start; gap: 16px; margin-bottom: 20px; }
         .stg-avatar-wrap { position: relative; width: 72px; height: 72px; flex-shrink: 0; }
@@ -358,7 +365,7 @@ export default function Settings({ username, onLogout }) {
 // ===================== PROFILE =====================
 function ProfileSection({ username }) {
   const [original, setOriginal] = useState(null);
-  const [form, setForm] = useState({ display_name: '', bio: '', status: '', avatar_color: AVATAR_COLORS[0], avatar_url: '' });
+  const [form, setForm] = useState(null); // null while loading — never a premature fallback
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [toast, setToast] = useState('');
@@ -375,10 +382,10 @@ function ProfileSection({ username }) {
       };
       setForm(data);
       setOriginal(data);
-    }).catch(() => {});
+    }).catch(() => setForm({ display_name: '', bio: '', status: '', avatar_color: AVATAR_COLORS[0], avatar_url: '' }));
   }, [username]);
 
-  const dirty = original && JSON.stringify(form) !== JSON.stringify(original);
+  const dirty = original && form && JSON.stringify(form) !== JSON.stringify(original);
 
   const handleAvatarFile = async (file) => {
     if (!file) return;
@@ -410,10 +417,8 @@ function ProfileSection({ username }) {
       <div className="stg-card">
         <div className="stg-avatar-block">
           <div className="stg-avatar-wrap">
-            {form.avatar_url
-              ? <img className="stg-avatar-img" src={form.avatar_url} alt={username} />
-              : <div className="stg-avatar-fallback" style={{ background: form.avatar_color }}>{username[0]?.toUpperCase()}</div>}
-            <button className="stg-avatar-upload-badge" aria-label="Upload photo" onClick={() => fileRef.current?.click()}>
+            <Avatar user={form ? { ...form, username } : null} size={72} loading={!form} />
+            <button className="stg-avatar-upload-badge" aria-label="Upload photo" onClick={() => fileRef.current?.click()} disabled={!form}>
               {uploading ? <Loader2 size={13} className="stg-spin" /> : <Camera size={13} />}
             </button>
             <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp" style={{ display: 'none' }}
@@ -424,9 +429,9 @@ function ProfileSection({ username }) {
         <label className="stg-field-label">Avatar colour (fallback when no photo)</label>
         <div className="stg-swatch-row">
           {AVATAR_COLORS.map(c => (
-            <button key={c} type="button" className={`stg-swatch ${form.avatar_color === c ? 'selected' : ''}`}
-              style={{ background: c }} onClick={() => setForm(prev => ({ ...prev, avatar_color: c }))}>
-              {form.avatar_color === c && <Check size={12} />}
+            <button key={c} type="button" className={`stg-swatch ${form?.avatar_color === c ? 'selected' : ''}`}
+              style={{ background: c }} onClick={() => setForm(prev => ({ ...prev, avatar_color: c }))} disabled={!form}>
+              {form?.avatar_color === c && <Check size={12} />}
             </button>
           ))}
         </div>
@@ -435,7 +440,7 @@ function ProfileSection({ username }) {
       <div className="stg-card">
         <div className="stg-field-group">
           <label className="stg-field-label">Display name</label>
-          <input className="stg-input" value={form.display_name} maxLength={40}
+          <input className="stg-input" value={form?.display_name || ''} maxLength={40} disabled={!form}
             placeholder={username} onChange={(e) => setForm(prev => ({ ...prev, display_name: e.target.value }))} />
         </div>
         <div className="stg-field-group">
@@ -448,13 +453,13 @@ function ProfileSection({ username }) {
         </div>
         <div className="stg-field-group">
           <label className="stg-field-label">Bio</label>
-          <textarea className="stg-input stg-textarea" value={form.bio} maxLength={160}
+          <textarea className="stg-input stg-textarea" value={form?.bio || ''} maxLength={160} disabled={!form}
             onChange={(e) => setForm(prev => ({ ...prev, bio: e.target.value }))} />
-          <div className="stg-char-count">{form.bio.length}/160</div>
+          <div className="stg-char-count">{(form?.bio || '').length}/160</div>
         </div>
         <div className="stg-field-group">
           <label className="stg-field-label">Status</label>
-          <input className="stg-input" value={form.status} maxLength={60} placeholder="What's happening?"
+          <input className="stg-input" value={form?.status || ''} maxLength={60} placeholder="What's happening?" disabled={!form}
             onChange={(e) => setForm(prev => ({ ...prev, status: e.target.value }))} />
         </div>
 
@@ -604,7 +609,7 @@ function PreferencesSection({ prefs, updatePref }) {
         <div className="stg-card-title">Theme</div>
         <SegmentedControl ariaLabel="Theme"
           options={[{ value: 'dark', label: 'Dark' }, { value: 'light', label: 'Light' }, { value: 'system', label: 'System' }]}
-          value={prefs.theme} onChange={(v) => updatePref('theme', v)} />
+          value={getStoredTheme()} onChange={(v) => changeTheme(v)} />
       </div>
 
       <div className="stg-card">
@@ -783,7 +788,7 @@ function ChatsSection({ prefs, updatePref }) {
         <div>
           <div className="stg-row-label">Emoji skin tone</div>
         </div>
-        <select className="stg-input" style={{ width: '140px' }} value={prefs.emojiSkinTone}
+        <select className="stg-input" style={{ width: 'auto', minWidth: '160px', flexShrink: 0 }} value={prefs.emojiSkinTone}
           onChange={(e) => updatePref('emojiSkinTone', e.target.value)}>
           <option value="default">Default 👋</option>
           <option value="light">Light 👋🏻</option>
