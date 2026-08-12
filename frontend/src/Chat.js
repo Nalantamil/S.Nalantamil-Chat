@@ -116,7 +116,7 @@ function Chat({ username, onLogout, onOpenSettings }) {
   // screen they might click around on. It waits exactly as long as it needs to,
   // no fixed timer — fast connections clear it almost instantly. =====
   const [appLoading, setAppLoading] = useState(true);
-  const [loadingMessage, setLoadingMessage] = useState('Connecting to Nalantamil...');
+  const [, setLoadingMessage] = useState('Connecting to Nalantamil...');
 
   // ===== DRAWER STATE — only meaningful on narrow/mobile screens (see isMobile below).
   // On wide screens the list is just always visible, this is ignored. =====
