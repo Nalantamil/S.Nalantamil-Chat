@@ -494,10 +494,10 @@ function ProfileSection({ username }) {
       <div className="stg-card">
         <div className="stg-avatar-block">
           <div className="stg-avatar-wrap">
-            {!form ? (
+            {!form && !cached ? (
               <div className="avatar-skeleton" style={{ width: 72, height: 72, borderRadius: '50%', background: 'var(--stg-surface-4)' }} />
             ) : (
-              <ProfileAvatar user={{ ...form, username }} size={72} />
+              <ProfileAvatar user={{ ...(cached || {}), ...(form || {}), username }} size={72} />
             )}
             <button className="stg-avatar-upload-badge" aria-label="Upload photo" onClick={() => fileRef.current?.click()} disabled={!form}>
               {uploading ? <Loader2 size={13} className="stg-spin" /> : <Camera size={13} />}
