@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import axios from 'axios';
 import {
@@ -7,7 +7,7 @@ import {
   Download, Volume2, VolumeX, X,
 } from 'lucide-react';
 import { getStoredTheme, changeTheme, initTheme } from './theme';
-import Avatar from './Avatar';
+
 
 const API = 'https://s-nalantamil-chat.onrender.com';
 const AVATAR_COLORS = ['#667eea', '#e74c3c', '#2ecc71', '#f39c12', '#e91e63', '#00bcd4', '#9c27b0', '#ff5722'];
@@ -494,7 +494,11 @@ function ProfileSection({ username }) {
       <div className="stg-card">
         <div className="stg-avatar-block">
           <div className="stg-avatar-wrap">
-            <ProfileAvatar user={{ ...(cached || {}), ...(form || {}), username }} size={72} />
+            {!form ? (
+              <div className="avatar-skeleton" style={{ width: 72, height: 72, borderRadius: '50%', background: 'var(--stg-surface-4)' }} />
+            ) : (
+              <ProfileAvatar user={{ ...form, username }} size={72} />
+            )}
             <button className="stg-avatar-upload-badge" aria-label="Upload photo" onClick={() => fileRef.current?.click()} disabled={!form}>
               {uploading ? <Loader2 size={13} className="stg-spin" /> : <Camera size={13} />}
             </button>
