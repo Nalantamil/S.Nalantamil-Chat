@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import axios from 'axios';
 import {
@@ -11,6 +11,55 @@ import Avatar from './Avatar';
 
 const API = 'https://s-nalantamil-chat.onrender.com';
 const AVATAR_COLORS = ['#667eea', '#e74c3c', '#2ecc71', '#f39c12', '#e91e63', '#00bcd4', '#9c27b0', '#ff5722'];
+
+// ===== PROFILE AVATAR CACHE — the profile fetch hits a cold-start server, so
+// the avatar used to sit blank (loading skeleton) until it answered. We cache
+// the last known photo/colour per user and paint it immediately. =====
+const profileCacheKey = (username) => `profile_cache_${username}`;
+const readProfileCache = (username) => {
+  try {
+    const raw = localStorage.getItem(profileCacheKey(username));
+    return raw ? JSON.parse(raw) : null;
+  } catch (err) { return null; }
+};
+const writeProfileCache = (username, data) => {
+  try {
+    localStorage.setItem(profileCacheKey(username), JSON.stringify({
+      avatar_url: data.avatar_url || '',
+      avatar_color: data.avatar_color || AVATAR_COLORS[0],
+    }));
+  } catch (err) {}
+};
+
+// Profile-card avatar: same look as the shared <Avatar>, plus an onError
+// fallback so a broken/expired photo URL degrades to the colour + initial
+// instead of rendering nothing at all.
+function ProfileAvatar({ user, size = 72 }) {
+  const [broken, setBroken] = useState(false);
+  const url = user?.avatar_url;
+  useEffect(() => { setBroken(false); }, [url]);
+  const common = {
+    width: size, height: size, borderRadius: '50%', flexShrink: 0,
+    display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
+  };
+  if (url && !broken) {
+    return (
+      <div style={common}>
+        <img src={url} alt={user?.username || 'Profile photo'} onError={() => setBroken(true)}
+          style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+      </div>
+    );
+  }
+  return (
+    <div style={{
+      ...common,
+      background: user?.avatar_color || AVATAR_COLORS[0],
+      color: '#fff', fontWeight: 700, fontSize: Math.round(size * 0.4),
+    }}>
+      {user?.username ? user.username[0].toUpperCase() : '?'}
+    </div>
+  );
+}
 const ACCENTS = {
   violet: { label: 'Violet', c1: '#6366f1', c2: '#8b5cf6' },
   blue: { label: 'Blue', c1: '#3b82f6', c2: '#06b6d4' },
@@ -145,13 +194,37 @@ export default function Settings({ username, onLogout }) {
   return (
     <div className="stg-page">
     <style>{`
+        /* Settings owns its own light/dark tokens, scoped to .stg-page so the
+           chat's own variables are never overridden. Falls back to the global
+           token if the app already defines one. */
         .stg-page {
-          min-height: 100vh; background: var(--bg); color: var(--foreground);
+          --stg-bg: var(--bg, #ffffff);
+          --stg-surface-2: var(--surface-2, #f6f7fa);
+          --stg-surface-3: var(--surface-3, #eceef4);
+          --stg-surface-4: var(--surface-4, #dfe3ec);
+          --stg-border: var(--border, #e1e5ee);
+          --stg-fg: var(--foreground, #10131f);
+          --stg-muted: var(--muted-foreground, #565c6e);
+          --stg-faint: var(--faint-foreground, #858b9c);
+          --stg-destructive: var(--destructive, #ef4444);
+          --stg-success: var(--success, #10b981);
+
+          min-height: 100vh; background: var(--stg-bg); color: var(--stg-fg);
           font-family: 'Segoe UI', sans-serif; display: flex;
-          --stg-bg: var(--bg); --stg-surface-2: var(--surface-2); --stg-surface-3: var(--surface-3); --stg-surface-4: var(--surface-4);
-          --stg-border: var(--border); --stg-fg: var(--foreground); --stg-muted: var(--muted-foreground); --stg-faint: var(--faint-foreground);
-          --stg-destructive: var(--destructive); --stg-success: var(--success);
         }
+        html.dark .stg-page {
+          --stg-bg: var(--bg, #0f1117);
+          --stg-surface-2: var(--surface-2, #161a25);
+          --stg-surface-3: var(--surface-3, #1f2431);
+          --stg-surface-4: var(--surface-4, #2b3140);
+          --stg-border: var(--border, rgba(255,255,255,0.10));
+          --stg-fg: var(--foreground, #f2f3f7);
+          --stg-muted: var(--muted-foreground, #a4a9ba);
+          --stg-faint: var(--faint-foreground, #767c8e);
+        }
+        html.dark .stg-page input,
+        html.dark .stg-page textarea,
+        html.dark .stg-page select { color-scheme: dark; }
         .stg-page[data-font-size="small"] { font-size: 13px; }
         .stg-page[data-font-size="large"] { font-size: 16px; }
 
@@ -366,6 +439,7 @@ export default function Settings({ username, onLogout }) {
 function ProfileSection({ username }) {
   const [original, setOriginal] = useState(null);
   const [form, setForm] = useState(null); // null while loading — never a premature fallback
+  const [cached] = useState(() => readProfileCache(username)); // last known photo/colour, painted instantly
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [toast, setToast] = useState('');
@@ -382,6 +456,7 @@ function ProfileSection({ username }) {
       };
       setForm(data);
       setOriginal(data);
+      writeProfileCache(username, data);
     }).catch(() => setForm({ display_name: '', bio: '', status: '', avatar_color: AVATAR_COLORS[0], avatar_url: '' }));
   }, [username]);
 
@@ -393,6 +468,7 @@ function ProfileSection({ username }) {
     try {
       const url = await uploadToCloudinary(file);
       setForm(prev => ({ ...prev, avatar_url: url }));
+      writeProfileCache(username, { ...(form || {}), avatar_url: url });
     } catch (err) {}
     setUploading(false);
   };
@@ -402,6 +478,7 @@ function ProfileSection({ username }) {
     try {
       await axios.put(`${API}/profile/${username}`, form);
       setOriginal(form);
+      writeProfileCache(username, form);
       setToast('Profile saved');
       setTimeout(() => setToast(''), 2500);
     } catch (err) {
@@ -417,7 +494,7 @@ function ProfileSection({ username }) {
       <div className="stg-card">
         <div className="stg-avatar-block">
           <div className="stg-avatar-wrap">
-            <Avatar user={form ? { ...form, username } : null} size={72} loading={!form} />
+            <ProfileAvatar user={{ ...(cached || {}), ...(form || {}), username }} size={72} />
             <button className="stg-avatar-upload-badge" aria-label="Upload photo" onClick={() => fileRef.current?.click()} disabled={!form}>
               {uploading ? <Loader2 size={13} className="stg-spin" /> : <Camera size={13} />}
             </button>
@@ -603,13 +680,23 @@ function AccountSection({ username, onLogout }) {
 
 // ===================== PREFERENCES =====================
 function PreferencesSection({ prefs, updatePref }) {
+  // Theme must live in React state — reading getStoredTheme() straight into the
+  // control meant nothing re-rendered on click, so the sliding pill never moved
+  // even though the theme itself had changed.
+  const [theme, setTheme] = useState(() => getStoredTheme());
+
+  const pickTheme = (v) => {
+    setTheme(v);
+    changeTheme(v);
+  };
+
   return (
     <>
       <div className="stg-card">
         <div className="stg-card-title">Theme</div>
         <SegmentedControl ariaLabel="Theme"
           options={[{ value: 'dark', label: 'Dark' }, { value: 'light', label: 'Light' }, { value: 'system', label: 'System' }]}
-          value={getStoredTheme()} onChange={(v) => changeTheme(v)} />
+          value={theme} onChange={pickTheme} />
       </div>
 
       <div className="stg-card">

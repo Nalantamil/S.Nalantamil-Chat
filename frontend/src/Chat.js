@@ -116,7 +116,7 @@ function Chat({ username, onLogout, onOpenSettings }) {
   // screen they might click around on. It waits exactly as long as it needs to,
   // no fixed timer — fast connections clear it almost instantly. =====
   const [appLoading, setAppLoading] = useState(true);
-  const [, setLoadingMessage] = useState('Connecting to Nalantamil...');
+  const [loadingMessage, setLoadingMessage] = useState('Connecting to Nalantamil...');
 
   // ===== DRAWER STATE — only meaningful on narrow/mobile screens (see isMobile below).
   // On wide screens the list is just always visible, this is ignored. =====
@@ -1864,7 +1864,44 @@ function Chat({ username, onLogout, onOpenSettings }) {
   // until the essential startup data has arrived. =====
   if (appLoading) {
     return (
-      <div className="app-loading-screen">
+      <div
+        className="app-loading-screen"
+        style={{
+          position: 'fixed', inset: 0, zIndex: 99999,
+          display: 'flex', flexDirection: 'column',
+          alignItems: 'center', justifyContent: 'center', gap: '18px',
+          background: 'linear-gradient(-45deg, #0f0c29, #302b63, #24243e, #1a1a2e)',
+          color: '#e9e9f2', textAlign: 'center', padding: '24px',
+          fontFamily: "'Segoe UI', system-ui, -apple-system, sans-serif",
+        }}
+        role="status"
+        aria-live="polite"
+      >
+        <div
+          style={{
+            width: '72px', height: '72px', borderRadius: '20px',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            background: 'linear-gradient(135deg, #667eea, #764ba2)',
+            boxShadow: '0 12px 40px rgba(102,126,234,0.45)',
+          }}
+        >
+          <MessageCircleIcon size={36} />
+        </div>
+        <div style={{ fontSize: '22px', fontWeight: 700, letterSpacing: '0.3px' }}>Nalantamil</div>
+        <Loader2Icon size={26} className="spin-icon" />
+        <div style={{ fontSize: '14px', opacity: 0.75, maxWidth: '360px', lineHeight: 1.5 }}>
+          {loadingMessage}
+        </div>
+        <style>{`
+          @keyframes chat-spin { to { transform: rotate(360deg); } }
+          .spin-icon { animation: chat-spin 900ms linear infinite; }
+        `}</style>
+      </div>
+    );
+  }
+
+  return (
+    <>
        <style>{`
         * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -4405,8 +4442,7 @@ function Chat({ username, onLogout, onOpenSettings }) {
           )}
         </div>
       </div>
-    </div>
+    </>
   );
-}
 }
 export default Chat;
